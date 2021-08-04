@@ -5,4 +5,4 @@ import System.Environment
 import Parser
 
 main :: IO ()
-main = getArgs >>= putStrLn . head
+main = getArgs >>= putStrLn . run . head

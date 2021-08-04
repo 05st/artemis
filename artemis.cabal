@@ -27,6 +27,7 @@ library
   exposed-modules:
       AST
       Parser
+      Type
   other-modules:
       Paths_artemis
   hs-source-dirs:
