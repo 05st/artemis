@@ -15,6 +15,73 @@ identStr = do
     rest <- many (letter <|> digit <|> oneOf "_'")
     return $ first:rest
 
+reqSpaces :: Parser ()
+reqSpaces = skipMany1 space
+
+-- Statements
+statement :: Parser Stmt
+statement = exprStmt
+
+exprStmt :: Parser Stmt
+exprStmt = SExpr <$> expression
+
+-- Expressions
+
+expression :: Parser Expr
+expression = block <|> assign <|> if' <|> logicOr
+
+block :: Parser Expr
+block = EBlock <$> (char '{' *> many (spaces *> statement <* spaces) <* char '}')
+
+assign :: Parser Expr
+assign = do
+    id <- ident
+    EAssign (EValue id) <$> (spaces *> char '=' *> spaces *> expression)
+
+if' :: Parser Expr
+if' = do
+    string "if" *> reqSpaces
+    cond <- expression
+    spaces *> string "then" *> reqSpaces
+    a <- expression
+    spaces *> string "else" *> reqSpaces
+    EIf cond a <$> expression
+
+call :: Parser Expr
+call = undefined
+
+valExpr :: Parser Expr
+valExpr = EValue <$> value
+
+-- Operators
+
+binaryOps :: Parser Expr -> [(Oper, String)] -> Parser Expr
+binaryOps next opmap = let flist = [op <$ string lex | (op, lex) <- opmap]
+    in chainl1 next (EBinary <$> foldr1 (<|>) flist) 
+
+logicOr :: Parser Expr
+logicOr = binaryOps logicAnd [(Or, "||")]
+
+logicAnd :: Parser Expr
+logicAnd = binaryOps equality [(And, "&&")]
+
+equality :: Parser Expr
+equality = binaryOps comparison [(NotEqual, "!="), (Equal, "==")]
+
+comparison :: Parser Expr
+comparison = binaryOps term [(GreaterEqual, ">="), (Greater, ">"), (LesserEqual, "<="), (Lesser, "<")]
+
+term :: Parser Expr
+term = binaryOps factor [(Sub, "-"), (Add, "+")]
+
+factor :: Parser Expr
+factor = binaryOps unary [(Div, "/"), (Mul, "*")]
+
+unary :: Parser Expr
+unary = (do
+    op <- (Sub <$ char '-') <|> (Not <$ char '!')
+    EUnary op <$> unary) <|> call
+
 -- Values
 
 ident :: Parser Value
@@ -59,24 +126,6 @@ function = do
 value :: Parser Value
 value = string' <|> bool <|> ident  <|> (try float <|> integer) <|> function <|> (VUnit <$ string "()")
 
--- Expressions
-
-expression :: Parser Expr
-expression = assign <|> if' <|> logicOr
-
-assign :: Parser Expr
-assign = do
-    id <- ident
-    EAssign (EValue id) <$> (spaces *> char '=' *> spaces *> expression)
-
-if' :: Parser Expr
-if' = undefined
-
--- Operators
-
-logicOr :: Parser Expr
-logicOr = undefined
-
 -- Types
 
 pType :: Parser Type
@@ -96,6 +145,6 @@ pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ st
 --
 
 run :: String -> String
-run input = case parse pType "artemis" input of
+run input = case parse statement "artemis" input of
     Left err -> "ERROR: " ++ show err
     Right val -> show val
