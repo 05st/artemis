@@ -8,9 +8,6 @@ import Text.Parsec.String (Parser)
 import AST
 import Type
 
-ptype :: Parser Type
-ptype = undefined
-
 identStr :: Parser String
 identStr = do
     first <- letter
@@ -44,7 +41,7 @@ parameter :: Parser (String, Type)
 parameter = do
     ident <- identStr
     spaces *> char ':' *> spaces
-    (ident,) <$> ptype
+    (ident,) <$> pType
 
 function :: Parser Value
 function = do
@@ -53,18 +50,30 @@ function = do
     (params, types) <- unzip <$> sepBy parameter (spaces *> char ',' *> spaces)
     spaces *> char ')' *> spaces
     string "->" *> spaces
-    rtype <- ptype
+    rtype <- pType
     spaces *> string "=>" *> spaces
     VFunc (TFunc types rtype) params <$> (block <|> expression)
 
 value :: Parser Value
 value = string' <|> bool <|> ident  <|> (try float <|> integer) <|> function <|> (VUnit <$ string "()")
 
+pFuncType :: Parser Type
+pFuncType = do
+    types <- sepBy pType (spaces *> char ',' *> spaces)
+    spaces *> string "->" *> spaces
+    TFunc types <$> pType
+
+pLitType :: Parser Type
+pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string") <|> (TUnit <$ string "()")
+
+pType :: Parser Type
+pType = pFuncType <|> pLitType <|> (char '(' *> spaces *> pType <* spaces <* char ')')
+
 block = undefined
 
 expression = undefined
 
 run :: String -> String
-run input = case parse value "artemis" input of
+run input = case parse pType "artemis" input of
     Left err -> "ERROR: " ++ show err
     Right val -> show val
