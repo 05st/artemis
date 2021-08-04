@@ -4,6 +4,7 @@ module Parser (run) where
 
 import Text.Parsec
 import Text.Parsec.String (Parser)
+import Text.Parsec.Combinator
 
 import AST
 import Type
@@ -13,6 +14,8 @@ identStr = do
     first <- letter
     rest <- many (letter <|> digit <|> oneOf "_'")
     return $ first:rest
+
+-- Values
 
 ident :: Parser Value
 ident = VIdent <$> identStr
@@ -47,31 +50,50 @@ function :: Parser Value
 function = do
     string "fn" *> spaces
     char '(' *> spaces
-    (params, types) <- unzip <$> sepBy parameter (spaces *> char ',' *> spaces)
-    spaces *> char ')' *> spaces
+    char ')' *> spaces
     string "->" *> spaces
-    rtype <- pType
-    spaces *> string "=>" *> spaces
-    VFunc (TFunc types rtype) params <$> (block <|> expression)
+    pType
+    string "=>" *> spaces
+    return $ VFunc (TFunc TBool TInt) "a" (EBlock [])
 
 value :: Parser Value
 value = string' <|> bool <|> ident  <|> (try float <|> integer) <|> function <|> (VUnit <$ string "()")
 
-pFuncType :: Parser Type
-pFuncType = do
-    types <- sepBy pType (spaces *> char ',' *> spaces)
-    spaces *> string "->" *> spaces
-    TFunc types <$> pType
+-- Expressions
 
-pLitType :: Parser Type
-pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string") <|> (TUnit <$ string "()")
+expression :: Parser Expr
+expression = assign <|> if' <|> logicOr
+
+assign :: Parser Expr
+assign = do
+    id <- ident
+    EAssign (EValue id) <$> (spaces *> char '=' *> spaces *> expression)
+
+if' :: Parser Expr
+if' = undefined
+
+-- Operators
+
+logicOr :: Parser Expr
+logicOr = undefined
+
+-- Types
 
 pType :: Parser Type
-pType = pFuncType <|> pLitType <|> (char '(' *> spaces *> pType <* spaces <* char ')')
+pType = try f <|> pBaseType
+    where
+    f = do 
+        input <- pBaseType
+        spaces *> string "->" *> spaces
+        TFunc input <$> pType
 
-block = undefined
+pBaseType :: Parser Type
+pBaseType = try pLitType <|> (char '(' *> spaces *> pType <* spaces <* char ')')
 
-expression = undefined
+pLitType :: Parser Type
+pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string") <|> try (TUnit <$ string "()")
+
+--
 
 run :: String -> String
 run input = case parse pType "artemis" input of

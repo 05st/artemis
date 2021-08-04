@@ -8,7 +8,7 @@ type Program = [Stmt]
 data Stmt = SExpr Expr | SRet Expr | SVar String Expr deriving (Show)
 data Oper = Add | Sub | Mul | Div deriving (Show)
 data Expr = EValue Value | EBlock [Stmt] | EAssign Expr Expr | EIf Expr Expr Expr | ECall Expr [Expr] | EBinary Expr Oper Expr | EUnary Oper Expr deriving (Show)
-data Value = VIdent String | VString String | VBool Bool | VInt Integer | VFloat Double | VFunc Type [String] Expr | VUnit
+data Value = VIdent String | VString String | VBool Bool | VInt Integer | VFloat Double | VFunc Type String Expr | VUnit
 
 instance Show Value where
     show = \case
@@ -17,6 +17,6 @@ instance Show Value where
         VBool bool -> if bool then "true" else "false"
         VInt int -> show int
         VFloat float -> show float
-        VFunc t _ _ -> "function " ++ show t
+        a@(VFunc t _ _) -> show a -- "function " ++ show t
         VUnit -> "()"
 

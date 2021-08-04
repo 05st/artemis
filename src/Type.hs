@@ -4,8 +4,9 @@ module Type where
 
 import Data.List
 
-data Type = TBool | TInt | TFloat | TString | TUnit | TFunc [Type] Type deriving (Eq)
+data Type = TBool | TInt | TFloat | TString | TUnit | TFunc Type Type deriving (Show, Eq)
 
+{-
 instance Show Type where
     show = \case
         TBool -> "bool"
@@ -13,4 +14,5 @@ instance Show Type where
         TFloat -> "float"
         TString -> "string"
         TUnit -> "()"
-        TFunc pts rt -> intercalate ", " (map show pts) ++ " -> " ++ show rt
+        TFunc it ot -> show it ++ " -> " ++ show ot
+-}
