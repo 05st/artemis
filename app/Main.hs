@@ -1,6 +1,8 @@
 module Main where
 
+import System.Environment
+
 import Parser
 
 main :: IO ()
-main = putStrLn test
+main = getArgs >>= putStrLn . head
