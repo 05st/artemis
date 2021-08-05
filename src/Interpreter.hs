@@ -8,7 +8,7 @@ import Control.Monad.Except
 import AST
 import Type
 
-data TypeError = Mismatch Type Type | MismatchMult [Type] Type | NotFunction Type | NotDefined String | EmptyBlock | PassNotInBlock | Unknown | End deriving (Show)
+data TypeError = Mismatch Type Type | MismatchMult [Type] Type | NotFunction Type | NotDefined String | EmptyBlock | PassNotInBlock | Unknown deriving (Show)
 type TypeCheck a = a -> ExceptT TypeError (Reader TypeEnv) Type
 type TypeEnv = [(String, Type)]
 
@@ -35,7 +35,7 @@ typecheck stmts = case runReader (runExceptT (go stmts)) [] of { Left err -> Jus
             t <- checkExpr e
             local (extend id t) (go stmts)
         go (stmt : stmts) = checkStmt stmt >> go stmts
-        go [] = throwError End
+        go [] = return TUnit
 
 checkStmt :: TypeCheck Stmt
 checkStmt = \case
@@ -70,7 +70,7 @@ checkExpr = \case
                 then return at
                 else throwError $ Mismatch at bt
             else throwError $ Mismatch TBool ct
-    ECall f p -> do
+    ECall p f -> do
         pt <- checkExpr p
         ft <- checkExpr f
         case ft of
