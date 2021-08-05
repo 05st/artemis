@@ -11,7 +11,7 @@ import Type
 
 identStr :: Parser String
 identStr = do
-    first <- letter
+    first <- letter <|> char '_'
     rest <- many (letter <|> digit <|> oneOf "_'")
     return $ first:rest
 
@@ -116,15 +116,19 @@ parameter = do
 function :: Parser Value
 function = do
     string "fn" *> spaces
-    char '(' *> spaces
-    (params, types) <- unzip <$> sepBy parameter (spaces *> char ',' *> spaces)
+    char '('
+    pts <- (spaces *> sepBy1 parameter (spaces *> char ',' *> spaces)) <?> "parameter"
     char ')' *> spaces
     string "->" *> spaces
     rt <- pType
     string "=>" *> spaces
     expr <- expression
-    let funcTypes = [foldr1 TFunc (drop i types ++ [rt]) | i <- [0 .. length types - 1]]
-    return $ foldr1 (.) [VFunc funcType param . EValue | (funcType, param) <- init (zip funcTypes params)] (VFunc (last funcTypes) (last params) expr)
+    case pts of
+        [(p, t)] -> return $ VFunc (TFunc t rt) p expr
+        other -> do
+            let (params, types) = unzip pts
+            let funcTypes = [foldr1 TFunc (drop i types ++ [rt]) | i <- [0 .. length types - 1]]
+            return $ foldr1 (.) [VFunc funcType param . EValue | (funcType, param) <- init (zip funcTypes params)] (VFunc (last funcTypes) (last params) expr)
 
 value :: Parser Value
 value = string' <|> bool <|> ident  <|> (try float <|> integer) <|> function <|> (VUnit <$ string "()")
