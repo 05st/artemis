@@ -9,26 +9,42 @@ import Text.Parsec.Combinator
 import AST
 import Type
 
+keywords :: [String]
+keywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float"]
+
 identStr :: Parser String
 identStr = do
     first <- letter <|> char '_'
     rest <- many (letter <|> digit <|> oneOf "_'")
-    return $ first:rest
+    let str = first:rest
+    if str `elem` keywords
+        then unexpected ("keyword '" ++ str ++ "'") <?> "valid identifier"
+        else return str
 
 reqSpaces :: Parser ()
 reqSpaces = skipMany1 space
 
 -- Statements
 statement :: Parser Stmt
-statement = exprStmt
+statement = varStmt <|> exprStmt <|> passStmt
+
+passStmt :: Parser Stmt
+passStmt = SPass <$> (string "pass" *> reqSpaces *> expression <* spaces <* char ';')
+
+varStmt :: Parser Stmt
+varStmt = do
+    string "let" *> spaces
+    id <- identStr
+    spaces *> char '=' *> spaces
+    SVar id <$> expression <* spaces <* char ';'
 
 exprStmt :: Parser Stmt
-exprStmt = SExpr <$> expression
+exprStmt = SExpr <$> expression <* spaces <* char ';'
 
 -- Expressions
 
 expression :: Parser Expr
-expression = block <|> assign <|> if' <|> logicOr
+expression = block <|> try assign <|> logicOr <|> if'
 
 block :: Parser Expr
 block = EBlock <$> (char '{' *> many (spaces *> statement <* spaces) <* char '}')
@@ -48,7 +64,15 @@ if' = do
     EIf cond a <$> expression
 
 call :: Parser Expr
-call = undefined
+call = (do
+    fnexpr <- ident
+    char '('
+    args <- (spaces *> sepBy1 expression (spaces *> char ',' *> spaces)) <?> "argument"
+    char ')'
+    return $ foldl1 (.) (ECall <$> reverse args) (EValue fnexpr)) <|> item
+
+item :: Parser Expr
+item = try valExpr <|> (char '(' *> expression <* char ')')
 
 valExpr :: Parser Expr
 valExpr = EValue <$> value
@@ -57,7 +81,7 @@ valExpr = EValue <$> value
 
 binaryOps :: Parser Expr -> [(Oper, String)] -> Parser Expr
 binaryOps next opmap = let flist = [op <$ string lex | (op, lex) <- opmap]
-    in chainl1 next (EBinary <$> foldr1 (<|>) flist) 
+    in chainl1 (spaces *> next <* spaces) (EBinary <$> foldr1 ((<|>) . try) flist) 
 
 logicOr :: Parser Expr
 logicOr = binaryOps logicAnd [(Or, "||")]
@@ -78,9 +102,9 @@ factor :: Parser Expr
 factor = binaryOps unary [(Div, "/"), (Mul, "*")]
 
 unary :: Parser Expr
-unary = (do
+unary = try call <|> (do
     op <- (Sub <$ char '-') <|> (Not <$ char '!')
-    EUnary op <$> unary) <|> call
+    EUnary op <$> unary)
 
 -- Values
 
@@ -131,7 +155,7 @@ function = do
             return $ foldr1 (.) [VFunc funcType param . EValue | (funcType, param) <- init (zip funcTypes params)] (VFunc (last funcTypes) (last params) expr)
 
 value :: Parser Value
-value = string' <|> bool <|> ident  <|> (try float <|> integer) <|> function <|> (VUnit <$ string "()")
+value = function <|> string' <|> bool <|> ident <|> (try float <|> integer) <|> (VUnit <$ string "()")
 
 -- Types
 
@@ -152,6 +176,6 @@ pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ st
 --
 
 run :: String -> String
-run input = case parse function "artemis" input of
+run input = case parse statement "artemis" input of
     Left err -> "ERROR: " ++ show err
     Right val -> show val

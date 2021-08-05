@@ -5,9 +5,9 @@ module AST where
 import Type
 
 type Program = [Stmt]
-data Stmt = SExpr Expr | SRet Expr | SVar String Expr deriving (Show)
+data Stmt = SExpr Expr | SPass Expr | SVar String Expr deriving (Show)
 data Oper = Or | And | NotEqual | Equal | GreaterEqual | Greater | LesserEqual | Lesser | Add | Sub | Mul | Div | Not deriving (Show)
-data Expr = EValue Value | EBlock [Stmt] | EAssign Expr Expr | EIf Expr Expr Expr | ECall Expr [Expr] | EBinary Oper Expr Expr | EUnary Oper Expr deriving (Show)
+data Expr = EValue Value | EBlock [Stmt] | EAssign Expr Expr | EIf Expr Expr Expr | ECall Expr Expr | EBinary Oper Expr Expr | EUnary Oper Expr deriving (Show)
 data Value = VIdent String | VString String | VBool Bool | VInt Integer | VFloat Double | VFunc Type String Expr | VUnit deriving (Show)
 
 {-
