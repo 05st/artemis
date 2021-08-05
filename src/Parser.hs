@@ -64,7 +64,7 @@ if' = do
     EIf cond a <$> expression
 
 call :: Parser Expr
-call = (do
+call = try (do
     fnexpr <- ident
     char '('
     args <- (spaces *> sepBy1 expression (spaces *> char ',' *> spaces)) <?> "argument"
@@ -145,7 +145,7 @@ function = do
     char ')' *> spaces
     string "->" *> spaces
     rt <- pType
-    string "=>" *> spaces
+    spaces *> string "=>" *> spaces
     expr <- expression
     case pts of
         [(p, t)] -> return $ VFunc (TFunc t rt) p expr
