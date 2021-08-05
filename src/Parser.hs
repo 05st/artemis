@@ -2,6 +2,8 @@
 
 module Parser (run) where
 
+-- TODO: call expressions only allow identifiers as the function expression, so (test(a))(b) doesn't work. fix
+
 import Text.Parsec
 import Text.Parsec.String (Parser)
 import Text.Parsec.Combinator
@@ -23,6 +25,10 @@ identStr = do
 
 reqSpaces :: Parser ()
 reqSpaces = skipMany1 space
+
+-- Program
+program :: Parser Program
+program = sepBy statement spaces
 
 -- Statements
 statement :: Parser Stmt
@@ -176,6 +182,6 @@ pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ st
 --
 
 run :: String -> String
-run input = case parse statement "artemis" input of
+run input = case parse program "artemis" input of
     Left err -> "ERROR: " ++ show err
     Right val -> show val
