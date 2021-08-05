@@ -8,7 +8,7 @@ import Control.Monad.Except
 import AST
 import Type
 
-data TypeError = Mismatch Type Type | MismatchMult [Type] Type | NotFunction Type | NotDefined String | Unknown deriving (Show)
+data TypeError = Mismatch Type Type | MismatchMult [Type] Type | NotFunction Type | NotDefined String | EmptyBlock | PassNotInBlock | Unknown | End deriving (Show)
 type TypeCheck a = a -> ExceptT TypeError (Reader TypeEnv) Type
 type TypeEnv = [(String, Type)]
 
@@ -28,15 +28,33 @@ numOp a b = case a of
     other -> Left $ MismatchMult [TInt, TFloat] other
 
 typecheck :: [Stmt] -> Maybe TypeError
-typecheck = undefined
+typecheck [] = Nothing
+typecheck stmts = case runReader (runExceptT (go stmts)) [] of { Left err -> Just err ; Right _ -> Nothing }
+    where
+        go ((SVar id e) : stmts) = do
+            t <- checkExpr e
+            local (extend id t) (go stmts)
+        go (stmt : stmts) = checkStmt stmt >> go stmts
+        go [] = throwError End
 
 checkStmt :: TypeCheck Stmt
-checkStmt = undefined
+checkStmt = \case
+    SExpr e -> checkExpr e
+    SPass e -> throwError PassNotInBlock
+    SVar _ _ -> throwError Unknown
+
+checkBlock :: TypeCheck [Stmt]
+checkBlock ((SVar id e) : stmts) = do
+    t <- checkExpr e
+    local (extend id t) (checkBlock stmts)
+checkBlock ((SPass e) : stmts) = checkExpr e
+checkBlock (stmt : stmts) = checkStmt stmt >> checkBlock stmts
+checkBlock [] = throwError EmptyBlock
 
 checkExpr :: TypeCheck Expr
 checkExpr = \case
     EValue v -> checkValue v
-    EBlock stmts -> undefined
+    EBlock stmts -> checkBlock stmts
     EAssign lhs rhs -> do
         lt <- checkExpr lhs
         rt <- checkExpr rhs
