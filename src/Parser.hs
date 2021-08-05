@@ -181,7 +181,7 @@ pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ st
 
 --
 
-run :: String -> String
+run :: String -> Either String [Stmt]
 run input = case parse program "artemis" input of
-    Left err -> "ERROR: " ++ show err
-    Right val -> show val
+    Left err -> Left $ show err
+    Right val -> Right val
