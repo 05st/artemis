@@ -117,11 +117,14 @@ function :: Parser Value
 function = do
     string "fn" *> spaces
     char '(' *> spaces
+    (params, types) <- unzip <$> sepBy parameter (spaces *> char ',' *> spaces)
     char ')' *> spaces
     string "->" *> spaces
-    pType
+    rt <- pType
     string "=>" *> spaces
-    return $ VFunc (TFunc TBool TInt) "a" (EBlock [])
+    expr <- expression
+    let funcTypes = [foldr1 TFunc (drop i types ++ [rt]) | i <- [0 .. length types - 1]]
+    return $ foldr1 (.) [VFunc funcType param . EValue | (funcType, param) <- init (zip funcTypes params)] (VFunc (last funcTypes) (last params) expr)
 
 value :: Parser Value
 value = string' <|> bool <|> ident  <|> (try float <|> integer) <|> function <|> (VUnit <$ string "()")
@@ -145,6 +148,6 @@ pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ st
 --
 
 run :: String -> String
-run input = case parse statement "artemis" input of
+run input = case parse function "artemis" input of
     Left err -> "ERROR: " ++ show err
     Right val -> show val
