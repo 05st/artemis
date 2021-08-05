@@ -12,4 +12,4 @@ main = getArgs >>= putStrLn . interpret . run . head
         interpret (Right stmts) =
             case typecheck stmts of
                 Just err -> "ERROR: " ++ show err
-                Nothing -> "Typecheck Passed"
+                Nothing -> "Typecheck Passed " ++ (show stmts)

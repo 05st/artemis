@@ -12,7 +12,7 @@ import AST
 import Type
 
 keywords :: [String]
-keywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float"]
+keywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float", "if", "else", "then"]
 
 identStr :: Parser String
 identStr = do
@@ -50,7 +50,7 @@ exprStmt = SExpr <$> expression <* spaces <* char ';'
 -- Expressions
 
 expression :: Parser Expr
-expression = block <|> try assign <|> logicOr <|> if'
+expression = block <|> if' <|> try assign <|> logicOr
 
 block :: Parser Expr
 block = EBlock <$> (char '{' *> many (spaces *> statement <* spaces) <* char '}')
@@ -71,11 +71,11 @@ if' = do
 
 call :: Parser Expr
 call = try (do
-    fnexpr <- ident
-    char '('
-    args <- (spaces *> sepBy1 expression (spaces *> char ',' *> spaces)) <?> "argument"
-    char ')'
-    return $ foldl1 (.) (ECall <$> reverse args) (EValue fnexpr)) <|> item
+        fnexpr <- ident
+        char '('
+        args <- (spaces *> sepBy1 expression (spaces *> char ',' *> spaces)) <?> "argument"
+        char ')'
+        return $ foldl1 (.) (ECall <$> reverse args) (EValue fnexpr)) <|> item
 
 item :: Parser Expr
 item = try valExpr <|> (char '(' *> expression <* char ')')
@@ -161,7 +161,7 @@ function = do
             return $ foldr1 (.) [VFunc funcType param . EValue | (funcType, param) <- init (zip funcTypes params)] (VFunc (last funcTypes) (last params) expr)
 
 value :: Parser Value
-value = function <|> string' <|> bool <|> ident <|> (try float <|> integer) <|> (VUnit <$ string "()")
+value = try function <|> string' <|> bool <|> ident <|> (try float <|> integer) <|> (VUnit <$ string "()")
 
 -- Types
 
