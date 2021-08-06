@@ -41,8 +41,10 @@ varStmt :: Parser Stmt
 varStmt = do
     string "let" *> spaces
     id <- identStr
+    spaces *> char ':' *> spaces
+    t <- pType
     spaces *> char '=' *> spaces
-    SVar id <$> expression <* spaces <* char ';'
+    SVar t id <$> expression <* spaces <* char ';'
 
 exprStmt :: Parser Stmt
 exprStmt = SExpr <$> expression <* spaces <* char ';'
@@ -161,7 +163,7 @@ function = do
             return $ foldr1 (.) [VFunc funcType param . EValue | (funcType, param) <- init (zip funcTypes params)] (VFunc (last funcTypes) (last params) expr)
 
 value :: Parser Value
-value = try function <|> string' <|> bool <|> ident <|> (try float <|> integer) <|> (VUnit <$ string "()")
+value = try function <|> string' <|> try bool <|> ident <|> (try float <|> integer) <|> (VUnit <$ string "()")
 
 -- Types
 

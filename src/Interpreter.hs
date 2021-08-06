@@ -31,9 +31,11 @@ typecheck :: [Stmt] -> Maybe TypeError
 typecheck [] = Nothing
 typecheck stmts = case runReader (runExceptT (go stmts)) [] of { Left err -> Just err ; Right _ -> Nothing }
     where
-        go ((SVar id e) : stmts) = do
-            t <- checkExpr e
-            local (extend id t) (go stmts)
+        go ((SVar t id e) : stmts) = do
+            rt <- local (extend id t) (checkExpr e)
+            if t == rt
+                then local (extend id t) (go stmts)
+                else throwError $ Mismatch t rt
         go (stmt : stmts) = checkStmt stmt >> go stmts
         go [] = return TUnit
 
@@ -41,13 +43,14 @@ checkStmt :: TypeCheck Stmt
 checkStmt = \case
     SExpr e -> checkExpr e
     SPass e -> throwError PassNotInBlock
-    SVar _ _ -> throwError Unknown
+    SVar {} -> throwError Unknown
 
 checkBlock :: TypeCheck [Stmt]
-checkBlock ((SVar id e) : stmts) = do
-    t <- checkExpr e
-    local (extend id t) (checkBlock stmts)
-checkBlock ((SPass e) : stmts) = checkExpr e
+checkBlock ((SVar t id e) : stmts) = do
+    rt <- local (extend id t) (checkExpr e)
+    if t == rt
+        then local (extend id rt) (checkBlock stmts)
+        else throwError $ Mismatch t rt
 checkBlock (stmt : stmts) = checkStmt stmt >> checkBlock stmts
 checkBlock [] = throwError EmptyBlock
 
