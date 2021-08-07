@@ -1,136 +1,216 @@
 {-# Language LambdaCase #-}
 
-module Interpreter (typecheck, checkValue, checkExpr) where
+module Interpreter (typecheck) where
 
 import Control.Monad.Reader
 import Control.Monad.Except
+import Control.Monad.State
+import Control.Monad.RWS
+
+import Data.Maybe
+import Data.Map
+import Data.Set
 
 import AST
 import Type
 
-data TypeError = Mismatch Type Type | MismatchMult [Type] Type | NotFunction Type | NotDefined String | EmptyBlock | PassNotInBlock | Unknown deriving (Show)
-type TypeCheck a = a -> ExceptT TypeError (Reader TypeEnv) Type
-type TypeEnv = [(String, Type)]
+data TypeError = Mismatch Type Type | MismatchMult [Type] Type | NotFunction Type | NotDefined String | EmptyBlock | PassOutOfBlock | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
 
-extend :: String -> Type -> TypeEnv -> TypeEnv
+type Infer a = RWST TEnv [Constraint] (Subst, Int) (Except TypeError) a
+type TEnv = [(String, Type)]
+
+type Subst = Map Int Type
+
+extend :: String -> Type -> TEnv -> TEnv
 extend s t e = (s, t):e
 
-numOp :: Type -> Type -> Either TypeError Type
-numOp a b = case a of
-    TInt -> case b of
-        TInt -> Right TInt
-        TFloat -> Right TFloat
-        other -> Left $ MismatchMult [TInt, TFloat] other
-    TFloat -> case b of
-        TInt -> Right TFloat
-        TFloat -> Right TFloat
-        other -> Left $ MismatchMult [TInt, TFloat] other
-    other -> Left $ MismatchMult [TInt, TFloat] other
+fresh :: Infer Type
+fresh = do
+    (s, n) <- get
+    let t = TVar (n + 1)
+    put (Data.Map.insert (n + 1) t s, n + 1)
+    return t
 
-typecheck :: [Stmt] -> Maybe TypeError
-typecheck [] = Nothing
-typecheck stmts = case runReader (runExceptT (go stmts)) [] of { Left err -> Just err ; Right _ -> Nothing }
-    where
-        go ((SVar t id e) : stmts) = do
-            rt <- local (extend id t) (checkExpr e)
-            if t == rt
-                then local (extend id t) (go stmts)
-                else throwError $ Mismatch t rt
-        go (stmt : stmts) = checkStmt stmt >> go stmts
-        go [] = return TUnit
+freshMaybe :: Maybe Type -> Infer Type
+freshMaybe Nothing = fresh
+freshMaybe (Just t) = return t
 
-checkStmt :: TypeCheck Stmt
-checkStmt = \case
-    SExpr e -> checkExpr e
-    SPass e -> throwError PassNotInBlock
-    SVar {} -> throwError Unknown
+addConst :: Type -> Type -> Infer ()
+addConst a b = tell [CEquality a b]
 
-checkBlock :: TypeCheck [Stmt]
-checkBlock ((SVar t id e) : stmts) = do
-    rt <- local (extend id t) (checkExpr e)
-    if t == rt
-        then local (extend id rt) (checkBlock stmts)
-        else throwError $ Mismatch t rt
-checkBlock (stmt : stmts) = checkStmt stmt >> checkBlock stmts
-checkBlock [] = throwError EmptyBlock
+typecheck :: [Stmt] -> Either TypeError String
+typecheck stmts = case runExcept (runRWST (checkProgram stmts) [] (Data.Map.empty, 0)) of
+    Left err -> Left err
+    Right (_, (s, _), c) -> Right $ '\n':show (runSolve c s) ++ " | \n\n" ++ show c ++ " | \n\n" ++ show s
 
-checkExpr :: TypeCheck Expr
-checkExpr = \case
-    EValue v -> checkValue v
-    EBlock stmts -> checkBlock stmts
-    EAssign lhs rhs -> do
-        lt <- checkExpr lhs
-        rt <- checkExpr rhs
-        if lt == rt
-            then return rt
-            else throwError $ Mismatch lt rt
-    EIf cond a b -> do
-        ct <- checkExpr cond
-        at <- checkExpr a
-        bt <- checkExpr b
-        if ct == TBool
-            then if at == bt
-                then return at
-                else throwError $ Mismatch at bt
-            else throwError $ Mismatch TBool ct
-    ECall p f -> do
-        pt <- checkExpr p
-        ft <- checkExpr f
-        case ft of
-            (TFunc i o) -> if i == pt
-                then return o
-                else throwError $ Mismatch i pt
-            other -> throwError $ NotFunction other
-    EBinary op lhs rhs -> do
-        lt <- checkExpr lhs
-        rt <- checkExpr rhs
+checkProgram :: [Stmt] -> Infer ()
+checkProgram ((SExpr e) : stmts) = inferExpr e >> checkProgram stmts
+checkProgram ((SVar tM id e) : stmts) = do
+    t <- freshMaybe tM
+    et <- local (extend id t) (inferExpr e)
+    addConst t et
+    local (extend id t) (checkProgram stmts)
+checkProgram ((SPass e) : stmts) = throwError PassOutOfBlock
+checkProgram [] = return ()
+
+inferBlock :: [Stmt] -> Infer Type
+inferBlock ((SExpr e) : stmts) = inferExpr e >> inferBlock stmts
+inferBlock ((SVar tM id e) : stmts) = do
+    t <- freshMaybe tM
+    et <- local (extend id t) (inferExpr e)
+    addConst t et
+    local (extend id t) (inferBlock stmts)
+inferBlock ((SPass e) : stmts) = inferExpr e
+inferBlock [] = throwError EmptyBlock
+
+inferExpr :: Expr -> Infer Type
+inferExpr = \case
+    EItem i -> inferItem i
+    EBlock stmts -> inferBlock stmts
+    EAssign l r -> do
+        lt <- inferExpr l
+        rt <- inferExpr r
+        addConst lt rt
+        return lt
+    EIf c a b -> do
+        ct <- inferExpr c
+        addConst tBool ct
+        at <- inferExpr a
+        bt <- inferExpr b
+        addConst at bt
+        return at
+    ECall a f -> do
+        ft <- inferExpr f
+        at <- inferExpr a
+        rt <- fresh
+        addConst ft (TFunc at rt) 
+        return rt
+    EBinary op l r -> do
+        lt <- inferExpr l
+        rt <- inferExpr r
         case op of
-            _ | op `elem` [Add, Sub, Mul, Div] ->
-                case numOp lt rt of
-                    (Left err) -> throwError err
-                    (Right t) -> return t
-            _ | op `elem` [Or, And] ->
-                if lt /= TBool
-                    then throwError $ Mismatch TBool lt
-                    else if rt /= TBool
-                        then throwError $ Mismatch TBool rt
-                        else return TBool
-            _ | op `elem` [Equal, NotEqual] -> return TBool
-            _ | op `elem` [Greater, GreaterEqual, Lesser, LesserEqual] ->
-                if (lt /= TInt) && (lt /= TFloat)
-                    then throwError $ MismatchMult [TInt, TFloat] lt
-                    else if (rt /= TInt) && (rt /= TFloat)
-                        then throwError $ MismatchMult [TInt, TFloat] rt
-                        else return TBool
+            _ | op `elem` [Add, Sub, Mul, Div] -> addConst tInt lt >> addConst tInt rt >> return tInt
+            _ | op `elem` [Greater, GreaterEqual, Lesser, LesserEqual] -> addConst tInt lt >> addConst tInt rt >> return tBool
+            _ | op `elem` [Or, And] -> addConst tBool lt >> addConst tBool rt >> return tBool
+            _ | op `elem` [Equal, NotEqual] -> addConst lt rt >> return tBool
             _ -> throwError Unknown
-    EUnary op e -> do
-        t <- checkExpr e
+    EUnary op x -> do
+        xt <- inferExpr x
         case op of
-            Sub ->
-                if (t /= TInt) && (t /= TFloat)
-                    then throwError $ MismatchMult [TInt, TFloat] t
-                    else return t
-            Not ->
-                if t /= TBool
-                    then throwError $ Mismatch TBool t
-                    else return TBool
+            Sub -> addConst tInt xt >> return tInt
+            Not -> addConst tBool xt >> return tBool
             _ -> throwError Unknown
 
-checkValue :: TypeCheck Value
-checkValue = \case
-    VBool _ -> return TBool
-    VInt _ -> return TInt
-    VFloat _ -> return TFloat
-    VString _ -> return TString
-    VUnit -> return TUnit
-    VFunc ft@(TFunc i o) p e -> do
-        rt <- local (extend p i) (checkExpr e)
-        if o == rt
-            then return ft
-            else throwError $ Mismatch o rt
-    VIdent id -> do
+inferItem :: Item -> Infer Type
+inferItem = \case
+    IIdent s -> do
         env <- ask
-        case lookup id env of
-            Just x -> return x
-            Nothing -> throwError $ NotDefined id
-    _ -> throwError Unknown
+        case Prelude.lookup s env of
+            Nothing -> throwError $ NotDefined s
+            Just t -> return t
+    IString _ -> return tString
+    IBool _ -> return tBool
+    IInt _ -> return tInt
+    IFloat _ -> return tFloat
+    IFunc pM rM p e -> do
+        pt <- freshMaybe pM
+        rt <- freshMaybe rM
+        et <- local (extend p pt) (inferExpr e)
+        addConst rt et
+        return (TFunc pt rt)
+    IUnit -> return tUnit
+
+substitute :: Type -> ExceptT TypeError (State Subst) Type
+substitute = \case
+    a@TCon {} -> return a
+    a@(TVar i) -> get >>= \s -> return $ fromMaybe a (Data.Map.lookup i s)
+    (TFunc a b) -> do
+        p <- substitute a
+        r <- substitute b
+        return $ TFunc p r
+
+tvs :: Type -> Set Type
+tvs (TCon _) = Data.Set.empty
+tvs a@(TVar _) = Data.Set.singleton a
+tvs (TFunc a b) = tvs a `Data.Set.union` tvs b
+
+occurs :: Type -> Type -> Bool
+occurs a b = a `Data.Set.member` tvs b
+
+unify :: Type -> Type -> ExceptT TypeError (State Subst) ()
+unify a b | a == b = return ()
+unify a@(TVar i) b = get >>= put . Data.Map.insert i b
+unify a b@(TVar i) = get >>= put . Data.Map.insert i a
+unify (TFunc fa fb) (TFunc ga gb) = unify fa ga >> unify fb gb
+unify a b = throwError $ Mismatch a b
+
+solve :: [Constraint] -> ExceptT TypeError (State Subst) Subst
+solve ((CEquality a b) : cs) = do
+    a' <- substitute a
+    b' <- substitute b
+    unify a' b'
+    solve cs
+solve [] = get
+
+runSolve :: [Constraint] -> Subst -> Either TypeError Subst
+runSolve c s = case runState (runExceptT (solve c)) s of
+    (Left err, _) -> Left err
+    (Right _, s) -> Right s
+
+{-
+
+sub :: Subst -> Type -> Type
+sub s = \case
+    TCon a -> TCon a
+    t@(TVar i) -> Data.Map.findWithDefault t i s
+    (TFunc a b) -> TFunc (sub s a) (sub s b)
+
+unify :: Type -> Type -> ExceptT TypeError (State Subst) Subst
+unify (TFunc a b) (TFunc a' b') = do
+    s1 <- unify a a'
+    s2 <- unify (sub s1 b) (sub s1 b')
+    return (Data.Map.map (sub s1) s2 `Data.Map.union` s1)
+unify a@(TVar _) b = bind a b
+unify a b@(TVar _) = bind b a
+unify (TCon a) (TCon b) | a == b = return Data.Map.empty
+unify a b = throwError $ UnifyError a b
+
+bind :: Type -> Type -> ExceptT TypeError (State Subst) Subst
+bind a@(TVar i) b
+    | a == b = return Data.Map.empty
+    | occurs a b = throwError $ InfiniteType a b
+    | otherwise = return $ Data.Map.singleton i b
+bind a b = throwError $ UnifyError a b
+
+
+solve :: [Constraint] -> Subst -> Either TypeError Subst
+solve stmts subst = case runState (runExceptT (go stmts)) subst of
+        (Left err, _) -> Left err
+        (Right _, s) -> Right s
+    where
+        go ((CEquality a b) : cs) = go cs >>= Data.Map.union (unify a b)
+        go [] = get
+subAll :: Type -> Type -> Type -> Type
+subAll a b t | t == a = b
+subAll a b (TFunc fa fb) = TFunc (subAll a b fa) (subAll a b fb)
+subAll a b t = t
+
+unify :: Type -> Type -> ExceptT TypeError (State Subst) ()
+unify a b | a == b = return ()
+unify at@(TVar i) b = do
+    s <- get
+    case Data.Map.lookup i s of
+        Nothing -> throwError $ NotDefined ('$':show i)
+        Just t -> if t /= at
+            then unify t b 
+            else put $ Data.Map.map (subAll t b) $ insert i b s
+unify a bt@(TVar i) = do
+    s <- get
+    case Data.Map.lookup i s of
+        Nothing -> throwError $ NotDefined ('$':show i)
+        Just t -> if t /= bt
+            then unify t a 
+            else put $ Data.Map.map (subAll t a) $ insert i a s
+unify (TFunc fa fb) (TFunc ga gb) = unify fa ga >> unify fb gb
+unify a b = throwError $ Mismatch a b
+-}

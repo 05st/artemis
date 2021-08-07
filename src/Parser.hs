@@ -8,6 +8,8 @@ import Text.Parsec
 import Text.Parsec.String (Parser)
 import Text.Parsec.Combinator
 
+import Data.Maybe
+
 import AST
 import Type
 
@@ -28,7 +30,7 @@ reqSpaces = skipMany1 space
 
 -- Program
 program :: Parser Program
-program = sepBy statement spaces
+program = many (spaces *> statement <* spaces)
 
 -- Statements
 statement :: Parser Stmt
@@ -41,9 +43,8 @@ varStmt :: Parser Stmt
 varStmt = do
     string "let" *> spaces
     id <- identStr
-    spaces *> char ':' *> spaces
-    t <- pType
-    spaces *> char '=' *> spaces
+    t <- try (Just <$> (spaces *> char ':' *> spaces *> pType <* spaces)) <|> (Nothing <$ spaces)
+    char '=' *> spaces
     SVar t id <$> expression <* spaces <* char ';'
 
 exprStmt :: Parser Stmt
@@ -60,7 +61,7 @@ block = EBlock <$> (char '{' *> many (spaces *> statement <* spaces) <* char '}'
 assign :: Parser Expr
 assign = do
     id <- ident
-    EAssign (EValue id) <$> (spaces *> char '=' *> spaces *> expression)
+    EAssign (EItem id) <$> (spaces *> char '=' *> spaces *> expression)
 
 if' :: Parser Expr
 if' = do
@@ -77,13 +78,13 @@ call = try (do
         char '('
         args <- (spaces *> sepBy1 expression (spaces *> char ',' *> spaces)) <?> "argument"
         char ')'
-        return $ foldl1 (.) (ECall <$> reverse args) (EValue fnexpr)) <|> item
+        return $ foldl1 (.) (ECall <$> reverse args) (EItem fnexpr)) <|> item
 
 item :: Parser Expr
 item = try valExpr <|> (char '(' *> expression <* char ')')
 
 valExpr :: Parser Expr
-valExpr = EValue <$> value
+valExpr = EItem <$> value
 
 -- Operators
 
@@ -114,56 +115,58 @@ unary = try call <|> (do
     op <- (Sub <$ char '-') <|> (Not <$ char '!')
     EUnary op <$> unary)
 
--- Values
+-- Items
 
-ident :: Parser Value
-ident = VIdent <$> identStr
+ident :: Parser Item
+ident = IIdent <$> identStr
 
-string' :: Parser Value
+string' :: Parser Item
 string' = do
     char '"'
     content <- many (noneOf "\"")
     char '"'
-    return $ VString content
+    return $ IString content
 
-bool :: Parser Value
-bool = VBool <$> ((True <$ string "true") <|> (False <$ string "false"))
+bool :: Parser Item
+bool = IBool <$> ((True <$ string "true") <|> (False <$ string "false"))
 
-integer :: Parser Value
-integer = VInt . read <$> many1 digit
+integer :: Parser Item
+integer = IInt . read <$> many1 digit
 
-float :: Parser Value
+float :: Parser Item
 float = do
     ints <- many1 digit
     dot <- char '.'
     frac <- many1 digit
-    return $ VFloat . read $ ints ++ dot:frac
+    return $ IFloat . read $ ints ++ dot:frac
 
-parameter :: Parser (String, Type)
+parameter :: Parser (String, Maybe Type)
 parameter = do
     ident <- identStr
-    spaces *> char ':' *> spaces
-    (ident,) <$> pType
+    pt <- (Just <$> (spaces *> char ':' *> spaces *> pType)) <|> (Nothing <$ spaces)
+    return (ident, pt)
 
-function :: Parser Value
+function :: Parser Item
 function = do
     string "fn" *> spaces
     char '('
     pts <- (spaces *> sepBy1 parameter (spaces *> char ',' *> spaces)) <?> "parameter"
-    char ')' *> spaces
-    string "->" *> spaces
-    rt <- pType
+    char ')'
+    rt <- try (Just <$> (spaces *> string "->" *> spaces *> pType)) <|> (Nothing <$ spaces)
     spaces *> string "=>" *> spaces
     expr <- expression
     case pts of
-        [(p, t)] -> return $ VFunc (TFunc t rt) p expr
+        [(p, t)] -> return $ IFunc t rt p expr
         other -> do
             let (params, types) = unzip pts
-            let funcTypes = [foldr1 TFunc (drop i types ++ [rt]) | i <- [0 .. length types - 1]]
-            return $ foldr1 (.) [VFunc funcType param . EValue | (funcType, param) <- init (zip funcTypes params)] (VFunc (last funcTypes) (last params) expr)
+            if (Nothing `elem` types) || isNothing rt
+                then return $ foldr1 (.) [IFunc i Nothing p . EItem | (p, i) <- init pts] (IFunc (last types) rt (last params) expr)
+                else let utypes = map fromJust (types ++ [rt]) 
+                     in let funcTypes = [(head dropped, foldr1 TFunc (tail dropped)) | i <- [0 .. length utypes - 2], let dropped = drop i utypes]
+                        in return $ foldr1 (.) [IFunc (Just i) (Just o) p . EItem | ((i, o), p) <- init (zip funcTypes params)] (IFunc (Just $ fst (last funcTypes)) (Just $ snd (last funcTypes)) (last params) expr)
 
-value :: Parser Value
-value = try function <|> string' <|> try bool <|> ident <|> (try float <|> integer) <|> (VUnit <$ string "()")
+value :: Parser Item
+value = try function <|> string' <|> try bool <|> ident <|> (try float <|> integer) <|> (IUnit <$ string "()")
 
 -- Types
 
@@ -179,7 +182,7 @@ pBaseType :: Parser Type
 pBaseType = try pLitType <|> (char '(' *> spaces *> pType <* spaces <* char ')')
 
 pLitType :: Parser Type
-pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string") <|> try (TUnit <$ string "()")
+pLitType = (tBool <$ string "bool") <|> (tInt <$ string "int") <|> (tFloat <$ string "float") <|> (tString <$ string "string") <|> try (tUnit <$ string "()")
 
 --
 

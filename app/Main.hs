@@ -6,10 +6,10 @@ import Parser
 import Interpreter
 
 main :: IO ()
-main = getArgs >>= putStrLn . interpret . run . head
+main = getArgs >>= readFile . head >>= putStrLn . interpret . run
     where
         interpret (Left err) = "ERROR: " ++ err
         interpret (Right stmts) =
             case typecheck stmts of
-                Just err -> "ERROR: " ++ show err
-                Nothing -> "Typecheck Passed " ++ (show stmts)
+                Left err -> "ERROR: " ++ show err
+                Right res -> "Typecheck Passed: " ++ res
