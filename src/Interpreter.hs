@@ -14,7 +14,7 @@ import Data.Set
 import AST
 import Type
 
-data TypeError = Mismatch Type Type | MismatchMult [Type] Type | NotFunction Type | NotDefined String | EmptyBlock | PassOutOfBlock | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
+data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | EmptyBlock | PassOutOfBlock | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
 
 type Infer a = RWST TEnv [Constraint] (Subst, Int) (Except TypeError) a
 type TEnv = [(String, Type)]
@@ -36,12 +36,14 @@ freshMaybe Nothing = fresh
 freshMaybe (Just t) = return t
 
 addConst :: Type -> Type -> Infer ()
-addConst a b = tell [CEquality a b]
+addConst a b = tell [CEq a b]
 
-typecheck :: [Stmt] -> Either TypeError String
+typecheck :: [Stmt] -> Maybe TypeError
 typecheck stmts = case runExcept (runRWST (checkProgram stmts) [] (Data.Map.empty, 0)) of
-    Left err -> Left err
-    Right (_, (s, _), c) -> Right $ '\n':show (runSolve c s) ++ " | \n\n" ++ show c
+    Left err -> Just err
+    Right (_, (s, _), c) -> leftToMaybe $ runSolve c s
+    where leftToMaybe (Left a) = Just a
+          leftToMaybe (Right _) = Nothing
 
 checkProgram :: [Stmt] -> Infer ()
 checkProgram ((SExpr e) : stmts) = inferExpr e >> checkProgram stmts
@@ -74,7 +76,7 @@ inferExpr = \case
         return lt
     EIf c a b -> do
         ct <- inferExpr c
-        addConst tBool ct
+        addConst TBool ct
         at <- inferExpr a
         bt <- inferExpr b
         addConst at bt
@@ -89,16 +91,16 @@ inferExpr = \case
         lt <- inferExpr l
         rt <- inferExpr r
         case op of
-            _ | op `elem` [Add, Sub, Mul, Div] -> addConst tInt lt >> addConst tInt rt >> return tInt
-            _ | op `elem` [Greater, GreaterEqual, Lesser, LesserEqual] -> addConst tInt lt >> addConst tInt rt >> return tBool
-            _ | op `elem` [Or, And] -> addConst tBool lt >> addConst tBool rt >> return tBool
-            _ | op `elem` [Equal, NotEqual] -> addConst lt rt >> return tBool
+            _ | op `elem` [Add, Sub, Mul, Div] -> addConst TInt lt >> addConst TInt rt >> return TInt
+            _ | op `elem` [Greater, GreaterEqual, Lesser, LesserEqual] -> addConst TInt lt >> addConst TInt rt >> return TBool
+            _ | op `elem` [Or, And] -> addConst TBool lt >> addConst TBool rt >> return TBool
+            _ | op `elem` [Equal, NotEqual] -> addConst lt rt >> return TBool
             _ -> throwError Unknown
     EUnary op x -> do
         xt <- inferExpr x
         case op of
-            Sub -> addConst tInt xt >> return tInt
-            Not -> addConst tBool xt >> return tBool
+            Sub -> addConst TInt xt >> return TInt
+            Not -> addConst TBool xt >> return TBool
             _ -> throwError Unknown
 
 inferItem :: Item -> Infer Type
@@ -108,28 +110,26 @@ inferItem = \case
         case Prelude.lookup s env of
             Nothing -> throwError $ NotDefined s
             Just t -> return t
-    IString _ -> return tString
-    IBool _ -> return tBool
-    IInt _ -> return tInt
-    IFloat _ -> return tFloat
+    IString _ -> return TString
+    IBool _ -> return TBool
+    IInt _ -> return TInt
+    IFloat _ -> return TFloat
     IFunc pM rM p e -> do
         pt <- freshMaybe pM
         rt <- freshMaybe rM
         et <- local (extend p pt) (inferExpr e)
         addConst rt et
         return (TFunc pt rt)
-    IUnit -> return tUnit
+    IUnit -> return TUnit
 
 substitute :: Subst -> Type -> Type
 substitute s = \case
-    a@TCon {} -> a
+    TCon ss ps -> TCon ss (Prelude.map (substitute s) ps)
     a@(TVar i) -> fromMaybe a (Data.Map.lookup i s)
-    (TFunc a b) -> TFunc (substitute s a) (substitute s b)
 
 tvs :: Type -> Set Type
-tvs (TCon _) = Data.Set.empty
+tvs (TCon _ ps) = Prelude.foldr (Data.Set.union . tvs) Data.Set.empty ps
 tvs a@(TVar _) = Data.Set.singleton a
-tvs (TFunc a b) = tvs a `Data.Set.union` tvs b
 
 occurs :: Type -> Type -> Bool
 occurs a b = a `Data.Set.member` tvs b
@@ -148,7 +148,7 @@ bind i t | t == a = return ()
     where a = TVar i
 
 solve :: [Constraint] -> ExceptT TypeError (State Subst) Subst
-solve ((CEquality a b) : cs) = do
+solve ((CEq a b) : cs) = do
     s <- get
     unify (substitute s a) (substitute s b)
     s' <- get

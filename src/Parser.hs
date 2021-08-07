@@ -182,7 +182,7 @@ pBaseType :: Parser Type
 pBaseType = try pLitType <|> (char '(' *> spaces *> pType <* spaces <* char ')')
 
 pLitType :: Parser Type
-pLitType = (tBool <$ string "bool") <|> (tInt <$ string "int") <|> (tFloat <$ string "float") <|> (tString <$ string "string") <|> try (tUnit <$ string "()")
+pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string") <|> try (TUnit <$ string "()")
 
 --
 

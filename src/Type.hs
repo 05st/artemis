@@ -1,30 +1,23 @@
 {-# Language LambdaCase #-}
+{-# Language PatternSynonyms #-}
 
 module Type where
 
 import Data.List
 
-data Type = TCon String | TVar Int | TFunc Type Type deriving (Eq, Ord)
+data Type = TCon String [Type] | TVar Int deriving (Eq, Ord)
 
-data Constraint = CEquality Type Type deriving (Show)
+pattern TBool = TCon "bool" []
+pattern TInt = TCon "int" []
+pattern TFloat = TCon "float" []
+pattern TString = TCon "string" []
+pattern TUnit = TCon "()" []
+pattern TFunc a b = TCon "->" [a, b]
 
-tBool :: Type
-tBool = TCon "bool"
-
-tInt :: Type
-tInt = TCon "int"
-
-tFloat :: Type
-tFloat = TCon "float"
-
-tString :: Type
-tString = TCon "string"
-
-tUnit :: Type
-tUnit = TCon "()"
+data Constraint = CEq Type Type deriving (Show)
 
 instance Show Type where
     show = \case
-        TCon s -> s
-        TVar i -> '$':show i
         TFunc a b -> '(':show a ++ " -> " ++ show b ++ ")"
+        TCon s p -> s ++ unwords (map show p)
+        TVar i -> '$':show i
