@@ -9,7 +9,7 @@ main :: IO ()
 main = getArgs >>= readFile . head >>= putStrLn . interpret . run
     where
         interpret (Left err) = "ERROR: " ++ err
-        interpret (Right stmts) =
+        interpret (Right stmts) = 
             case typecheck stmts of
                 Left err -> "ERROR: " ++ show err
                 Right subst -> "Typecheck Passed | " ++ show subst
