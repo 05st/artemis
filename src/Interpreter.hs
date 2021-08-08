@@ -14,21 +14,26 @@ import Data.Set
 import AST
 import Type
 
-data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | EmptyBlock | PassOutOfBlock | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
+data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String
+               | EmptyBlock | PassOutOfBlock | DataDeclInBlock
+               | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
 
 type Infer a = RWST TEnv [Constraint] (Subst, Int) (Except TypeError) a
 type TEnv = [(String, Type)]
 
-type Subst = Map Int Type
+type Subst = Map Type Type
 
 extend :: String -> Type -> TEnv -> TEnv
 extend s t e = (s, t):e
 
+varNames :: [String]
+varNames = [1..] >>= flip replicateM ['a'..'z']
+
 fresh :: Infer Type
 fresh = do
     (s, n) <- get
-    let t = TVar (n + 1)
-    put (Data.Map.insert (n + 1) t s, n + 1)
+    let t = TVar (varNames !! n)
+    put (Data.Map.insert t t s, n + 1)
     return t
 
 freshMaybe :: Maybe Type -> Infer Type
@@ -51,6 +56,7 @@ checkProgram ((SVar tM id e) : stmts) = do
     addConst t et
     local (extend id t) (checkProgram stmts)
 checkProgram ((SPass e) : stmts) = throwError PassOutOfBlock
+checkProgram ((SData tcon tcvars vcons) : stmts) = checkProgram stmts -- TODO
 checkProgram [] = return ()
 
 inferBlock :: [Stmt] -> Infer Type
@@ -61,6 +67,7 @@ inferBlock ((SVar tM id e) : stmts) = do
     addConst t et
     local (extend id t) (inferBlock stmts)
 inferBlock ((SPass e) : stmts) = inferExpr e
+inferBlock (SData {} : stmts) = throwError DataDeclInBlock
 inferBlock [] = throwError EmptyBlock
 
 inferExpr :: Expr -> Infer Type
@@ -123,7 +130,7 @@ inferItem = \case
 substitute :: Subst -> Type -> Type
 substitute s = \case
     TCon ss ps -> TCon ss (Prelude.map (substitute s) ps)
-    a@(TVar i) -> fromMaybe a (Data.Map.lookup i s)
+    a@(TVar _) -> fromMaybe a (Data.Map.lookup a s)
 
 tvs :: Type -> Set Type
 tvs (TCon _ ps) = Prelude.foldr (Data.Set.union . tvs) Data.Set.empty ps
@@ -134,16 +141,15 @@ occurs a b = a `Data.Set.member` tvs b
 
 unify :: Type -> Type -> ExceptT TypeError (State Subst) ()
 unify a b | a == b = return ()
-unify (TVar i) b = bind i b 
-unify a (TVar i) = bind i a
+unify a@(TVar _) b = bind a b 
+unify a b@(TVar _) = bind b a
 unify (TFunc fa fb) (TFunc ga gb) = unify fa ga >> unify fb gb
 unify a b = throwError $ Mismatch a b
 
-bind :: Int -> Type -> ExceptT TypeError (State Subst) ()
-bind i t | t == a = return ()
+bind :: Type -> Type -> ExceptT TypeError (State Subst) ()
+bind a t | t == a = return ()
          | occurs a t = throwError $ InfiniteType a t
-         | otherwise = get >>= put . Data.Map.insert i t
-    where a = TVar i
+         | otherwise = get >>= put . Data.Map.insert a t
 
 solve :: [Constraint] -> ExceptT TypeError (State Subst) Subst
 solve ((CEq a b) : cs) = do

@@ -4,17 +4,21 @@ module AST where
 
 import Type
 
+import Data.List
+
 type Program = [Stmt]
-data Stmt = SExpr Expr | SPass Expr | SVar (Maybe Type) String Expr
-data Oper = Or | And | NotEqual | Equal | GreaterEqual | Greater | LesserEqual | Lesser | Add | Sub | Mul | Div | Not deriving (Eq)
+data Stmt = SExpr Expr | SPass Expr | SVar (Maybe Type) String Expr | SData String [Type] [(String, [Type])]
 data Expr = EItem Item | EBlock [Stmt] | EAssign Expr Expr | EIf Expr Expr Expr | ECall Expr Expr | EBinary Oper Expr Expr | EUnary Oper Expr
 data Item = IIdent String | IString String | IBool Bool | IInt Integer | IFloat Double | IFunc (Maybe Type) (Maybe Type) String Expr | IUnit
+
+data Oper = Or | And | NotEqual | Equal | GreaterEqual | Greater | LesserEqual | Lesser | Add | Sub | Mul | Div | Not deriving (Eq)
 
 instance Show Stmt where
     show = \case
         SExpr e -> show e ++ ";"
         SPass e -> "pass " ++ show e ++ ";"
         SVar _ id e -> "let " ++ id ++ " = " ++ show e ++ ";"
+        SData tc ps vcs -> "data " ++ tc ++ '<':intercalate ", " (map show ps) ++ "> = " ++ intercalate " | " (map show vcs) ++ ";"
 
 instance Show Oper where
     show = \case

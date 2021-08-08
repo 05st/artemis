@@ -25,6 +25,12 @@ identStr = do
         then unexpected ("keyword '" ++ str ++ "'") <?> "valid identifier"
         else return str
 
+tIdentStr :: Parser String
+tIdentStr = do
+    first <- upper
+    rest <- many (letter <|> digit <|> oneOf "_'")
+    return $ first:rest
+
 reqSpaces :: Parser ()
 reqSpaces = skipMany1 space
 
@@ -34,14 +40,30 @@ program = many (spaces *> statement <* spaces)
 
 -- Statements
 statement :: Parser Stmt
-statement = varStmt <|> exprStmt <|> passStmt
+statement = dataStmt <|> varStmt <|> exprStmt <|> passStmt
+
+dataStmt :: Parser Stmt
+dataStmt = do
+    string "data" *> reqSpaces
+    con <- tIdentStr
+    tvars' <- (spaces *> char '<' *> spaces *> tvars <* spaces <* char '>' <* spaces) <|> ([] <$ spaces)
+    spaces *> char '=' *> spaces
+    vcons <- sepBy1 vcon (spaces *> char '|' *> spaces)
+    spaces *> char ';'
+    return $ SData con tvars' vcons
+    where
+        vcon = do
+            con <- tIdentStr
+            tvars' <- (spaces *> char '(' *> spaces *> tvars <* spaces <* char ')' <* spaces) <|> ([] <$ spaces)
+            return (con, tvars')
+        tvars = sepBy pTVar (spaces *> char ',' *> spaces)
 
 passStmt :: Parser Stmt
 passStmt = SPass <$> (string "pass" *> reqSpaces *> expression <* spaces <* char ';')
 
 varStmt :: Parser Stmt
 varStmt = do
-    string "let" *> spaces
+    string "let" *> reqSpaces
     id <- identStr
     t <- try (Just <$> (spaces *> char ':' *> spaces *> pType <* spaces)) <|> (Nothing <$ spaces)
     char '=' *> spaces
@@ -181,14 +203,15 @@ pTFunc = do
 
 pTCon :: Parser Type
 pTCon = do
-    first <- upper
-    rest <- many (letter <|> digit <|> oneOf "_'")
-    let con = first:rest
+    con <- tIdentStr
     tps <- (spaces *> char '<' *> spaces *> sepBy pType (spaces *> char ',' *> spaces) <* spaces <* char '>' <* spaces) <|> ([] <$ spaces)
     return $ TCon con tps
 
 pTItem :: Parser Type
-pTItem = try pTLit <|> (char '(' *> spaces *> pType <* spaces <* char ')')
+pTItem = try pTLit <|> pTVar <|> (char '(' *> spaces *> pType <* spaces <* char ')')
+
+pTVar :: Parser Type
+pTVar = TVar <$> identStr
 
 pTLit :: Parser Type
 pTLit = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string")

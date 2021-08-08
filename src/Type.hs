@@ -5,7 +5,7 @@ module Type where
 
 import Data.List
 
-data Type = TCon String [Type] | TVar Int deriving (Eq, Ord)
+data Type = TCon String [Type] | TVar String deriving (Eq, Ord)
 
 pattern TBool = TCon "bool" []
 pattern TInt = TCon "int" []
@@ -22,4 +22,4 @@ instance Show Type where
         TFunc a b -> '(':show a ++ " -> " ++ show b ++ ")"
         TCon s [] -> s
         TCon s p -> s ++ '<':intercalate ", " (map show p) ++ ">"
-        TVar i -> '$':show i
+        TVar s -> s
