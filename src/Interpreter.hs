@@ -27,7 +27,7 @@ extend :: String -> Type -> TEnv -> TEnv
 extend s t e = (s, t):e
 
 varNames :: [String]
-varNames = [1..] >>= flip replicateM ['a'..'z']
+varNames = Prelude.map ('$':) $ [1..] >>= flip replicateM ['a'..'z']
 
 fresh :: Infer Type
 fresh = do
@@ -38,7 +38,14 @@ fresh = do
 
 freshMaybe :: Maybe Type -> Infer Type
 freshMaybe Nothing = fresh
-freshMaybe (Just t) = return t
+freshMaybe (Just t) = addTVarsRecursive t >> return t
+
+addTVarsRecursive :: Type -> Infer ()
+addTVarsRecursive (TCon _ []) = return ()
+addTVarsRecursive (TCon _ ps) = mapM_ addTVarsRecursive ps
+addTVarsRecursive t@(TVar _) = do
+    (s, n) <- get
+    put (Data.Map.insert t t s, n)
 
 addConst :: Type -> Type -> Infer ()
 addConst a b = tell [CEq a b]
@@ -149,7 +156,13 @@ unify a b = throwError $ Mismatch a b
 bind :: Type -> Type -> ExceptT TypeError (State Subst) ()
 bind a t | t == a = return ()
          | occurs a t = throwError $ InfiniteType a t
-         | otherwise = get >>= put . Data.Map.insert a t
+         | otherwise = do
+            s <- get
+            case Data.Map.lookup a s of
+                Nothing -> throwError $ UnifyError a t -- TODO: better error message
+                Just a' -> if a /= a'
+                    then throwError $ Mismatch a' t
+                    else put (Data.Map.insert a t s)
 
 solve :: [Constraint] -> ExceptT TypeError (State Subst) Subst
 solve ((CEq a b) : cs) = do
