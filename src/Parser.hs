@@ -45,8 +45,8 @@ statement = dataStmt <|> varStmt <|> exprStmt <|> passStmt
 dataStmt :: Parser Stmt
 dataStmt = do
     string "data" *> reqSpaces
-    con <- tIdentStr
-    tvars' <- (spaces *> char '<' *> spaces *> tvars <* spaces <* char '>' <* spaces) <|> ([] <$ spaces)
+    con <- tIdentStr <* spaces
+    tvars' <- (char '<' *> spaces *> tvars <* spaces <* char '>' <* spaces) <|> ([] <$ spaces)
     spaces *> char '=' *> spaces
     vcons <- sepBy1 vcon (spaces *> char '|' *> spaces)
     spaces *> char ';'
