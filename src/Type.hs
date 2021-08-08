@@ -6,6 +6,8 @@ module Type where
 import Data.List
 
 data Type = TCon String [Type] | TVar String deriving (Eq, Ord)
+data Constraint = CEq Type Type deriving (Show)
+data Scheme = Forall [Type] Type
 
 pattern TBool = TCon "bool" []
 pattern TInt = TCon "int" []
@@ -14,8 +16,6 @@ pattern TString = TCon "string" []
 pattern TUnit = TCon "()" []
 pattern TVoid = TCon "void" []
 pattern TFunc a b = TCon "->" [a, b]
-
-data Constraint = CEq Type Type deriving (Show)
 
 instance Show Type where
     show = \case

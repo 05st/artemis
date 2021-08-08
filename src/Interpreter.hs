@@ -8,8 +8,8 @@ import Control.Monad.State
 import Control.Monad.RWS
 
 import Data.Maybe
-import Data.Map
-import Data.Set
+import Data.Map as Map
+import Data.Set as Set
 
 import AST
 import Type
@@ -19,12 +19,14 @@ data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String
                | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
 
 type Infer a = RWST TEnv [Constraint] (Subst, Int) (Except TypeError) a
-type TEnv = [(String, Type)]
-
+type TEnv = Map String Scheme
 type Subst = Map Type Type
 
-extend :: String -> Type -> TEnv -> TEnv
-extend s t e = (s, t):e
+primTEnv :: TEnv
+primTEnv = Map.empty
+
+extend :: String -> Scheme -> TEnv -> TEnv
+extend = Map.insert
 
 varNames :: [String]
 varNames = Prelude.map ('$':) $ [1..] >>= flip replicateM ['a'..'z']
@@ -33,7 +35,7 @@ fresh :: Infer Type
 fresh = do
     (s, n) <- get
     let t = TVar (varNames !! n)
-    put (Data.Map.insert t t s, n + 1)
+    put (Map.insert t t s, n + 1)
     return t
 
 freshMaybe :: Maybe Type -> Infer Type
@@ -45,23 +47,37 @@ addTVarsRecursive (TCon _ []) = return ()
 addTVarsRecursive (TCon _ ps) = mapM_ addTVarsRecursive ps
 addTVarsRecursive t@(TVar _) = do
     (s, n) <- get
-    put (Data.Map.insert t t s, n)
+    put (Map.insert t t s, n)
 
 addConst :: Type -> Type -> Infer ()
 addConst a b = tell [CEq a b]
 
-typecheck :: [Stmt] -> Either TypeError Subst
-typecheck stmts = case runExcept (runRWST (checkProgram stmts) [] (Data.Map.empty, 0)) of
+typecheck :: [Stmt] -> Either TypeError String
+typecheck stmts = case runExcept (runRWST (checkProgram stmts) primTEnv (Map.empty, 0)) of
     Left err -> Left err
-    Right (_, (s, _), c) -> runSolve c s
+    Right (_, (s, _), c) -> Right $ "\n\n" ++ show (runSolve c s) ++ "\n\n" ++ show c
+
+scoped :: String -> Scheme -> Infer a -> Infer a
+scoped x sc m = do
+    let scope e = extend x sc (Map.delete x e)
+    local scope m
+
+subEnv :: Subst -> TEnv -> TEnv
+subEnv s = Map.map (subScheme s)
+    where subScheme s (Forall as t) = Forall as $ substitute (Prelude.foldr Map.delete s as) t
 
 checkProgram :: [Stmt] -> Infer ()
 checkProgram ((SExpr e) : stmts) = inferExpr e >> checkProgram stmts
 checkProgram ((SVar tM id e) : stmts) = do
-    t <- freshMaybe tM
-    et <- local (extend id t) (inferExpr e)
-    addConst t et
-    local (extend id t) (checkProgram stmts)
+    env <- ask
+    (t, c) <- listen $ inferExpr e
+    (s, _) <- get
+    subst <- liftEither $ runSolve c s
+    let t1 = substitute subst t
+        sc = generalize env t1
+    tv <- freshMaybe tM
+    addConst t1 tv
+    scoped id sc (checkProgram stmts)
 checkProgram ((SPass e) : stmts) = throwError PassOutOfBlock
 checkProgram ((SData tcon tcvars vcons) : stmts) = checkProgram stmts -- TODO
 checkProgram [] = return ()
@@ -69,10 +85,15 @@ checkProgram [] = return ()
 inferBlock :: [Stmt] -> Infer Type
 inferBlock ((SExpr e) : stmts) = inferExpr e >> inferBlock stmts
 inferBlock ((SVar tM id e) : stmts) = do
-    t <- freshMaybe tM
-    et <- local (extend id t) (inferExpr e)
-    addConst t et
-    local (extend id t) (inferBlock stmts)
+    env <- ask
+    (t, c) <- listen $ inferExpr e
+    (s, _) <- get
+    subst <- liftEither $ runSolve c s
+    let t1 = substitute subst t
+        sc = generalize env t1
+    tv <- freshMaybe tM
+    addConst t1 tv
+    scoped id sc (inferBlock stmts)
 inferBlock ((SPass e) : stmts) = inferExpr e
 inferBlock (SData {} : stmts) = throwError DataDeclInBlock
 inferBlock [] = throwError EmptyBlock
@@ -94,11 +115,11 @@ inferExpr = \case
         addConst at bt
         return at
     ECall a f -> do
-        ft <- inferExpr f
-        at <- inferExpr a
-        rt <- fresh
-        addConst ft (TFunc at rt) 
-        return rt
+        t1 <- inferExpr f
+        t2 <- inferExpr a
+        tv <- fresh
+        addConst t1 (TFunc t2 tv)
+        return tv
     EBinary op l r -> do
         lt <- inferExpr l
         rt <- inferExpr r
@@ -115,42 +136,60 @@ inferExpr = \case
             Not -> addConst TBool xt >> return TBool
             _ -> throwError Unknown
 
+instantiate :: [(Type, Type)] -> Type -> Type
+instantiate [] t = t
+instantiate inst t = substitute (Map.fromList inst) t
+
+generalize :: TEnv -> Type -> Scheme
+generalize env t = Forall as t
+    where as = Set.toList $ tvs t `Set.difference` tvsEnv env
+          tvsEnv = tvsList . Map.elems
+          tvsList = Prelude.foldr (Set.union . tvsScheme) Set.empty 
+          tvsScheme (Forall as t) = tvs t `Set.difference` Set.fromList as
+
 inferItem :: Item -> Infer Type
 inferItem = \case
     IIdent s -> do
         env <- ask
-        case Prelude.lookup s env of
+        case Map.lookup s env of
             Nothing -> throwError $ NotDefined s
-            Just t -> return t
+            Just (Forall as t) -> do
+                ptvs <- mapM (const fresh) as
+                let inst = zip as ptvs
+                let vt = instantiate inst t
+                return vt
     IString _ -> return TString
     IBool _ -> return TBool
     IInt _ -> return TInt
     IFloat _ -> return TFloat
     IFunc pM rM p e -> do
-        pt <- freshMaybe pM
-        rt <- freshMaybe rM
-        et <- local (extend p pt) (inferExpr e)
-        addConst rt et
-        return (TFunc pt rt)
+        tv <- fresh
+        t <- scoped p (Forall [] tv) (inferExpr e)
+        return (TFunc tv t)
+        -- pt <- freshMaybe pM
+        -- rt <- freshMaybe rM
+        -- et <- local (extend p $ Forall [] pt) (inferExpr e)
+        -- addConst rt et
+        -- return (TFunc pt rt)
     IUnit -> return TUnit
 
 substitute :: Subst -> Type -> Type
 substitute s = \case
     TCon ss ps -> TCon ss (Prelude.map (substitute s) ps)
-    a@(TVar _) -> fromMaybe a (Data.Map.lookup a s)
+    a@(TVar _) -> fromMaybe a (Map.lookup a s)
 
 tvs :: Type -> Set Type
-tvs (TCon _ ps) = Prelude.foldr (Data.Set.union . tvs) Data.Set.empty ps
-tvs a@(TVar _) = Data.Set.singleton a
+tvs (TCon _ ps) = Prelude.foldr (Set.union . tvs) Set.empty ps
+tvs a@(TVar _) = Set.singleton a
 
 occurs :: Type -> Type -> Bool
-occurs a b = a `Data.Set.member` tvs b
+occurs a b = a `Set.member` tvs b
 
 unify :: Type -> Type -> ExceptT TypeError (State Subst) ()
 unify a b | a == b = return ()
 unify a@(TVar _) b = bind a b 
 unify a b@(TVar _) = bind b a
-unify (TFunc fa fb) (TFunc ga gb) = unify fa ga >> unify fb gb
+unify (TFunc fa fb) (TFunc ga gb) = unify fa ga >> get >>= \s -> unify (substitute s fb) (substitute s gb)
 unify a b = throwError $ Mismatch a b
 
 bind :: Type -> Type -> ExceptT TypeError (State Subst) ()
@@ -158,18 +197,18 @@ bind a t | t == a = return ()
          | occurs a t = throwError $ InfiniteType a t
          | otherwise = do
             s <- get
-            case Data.Map.lookup a s of
+            case Map.lookup a s of
                 Nothing -> throwError $ UnifyError a t -- TODO: better error message
                 Just a' -> if a /= a'
                     then throwError $ Mismatch a' t
-                    else put (Data.Map.insert a t s)
+                    else put (Map.insert a t s)
 
 solve :: [Constraint] -> ExceptT TypeError (State Subst) Subst
 solve ((CEq a b) : cs) = do
     s <- get
     unify (substitute s a) (substitute s b)
     s' <- get
-    put (Data.Map.map (substitute s') s')
+    put (Map.map (substitute s') s')
     solve cs
 solve [] = get
 
