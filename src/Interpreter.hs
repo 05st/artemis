@@ -55,7 +55,7 @@ addConst a b = tell [CEq a b]
 typecheck :: [Stmt] -> Either TypeError String
 typecheck stmts = case runExcept (runRWST (checkProgram stmts) primTEnv (Map.empty, 0)) of
     Left err -> Left err
-    Right (_, (s, _), c) -> Right $ "\n\n" ++ show (runSolve c s) ++ "\n\n" ++ show c
+    Right (_, (s, _), c) -> Right . show $ runSolve c s
 
 scoped :: String -> Scheme -> Infer a -> Infer a
 scoped x sc m = do
@@ -70,7 +70,7 @@ checkProgram :: [Stmt] -> Infer ()
 checkProgram ((SExpr e) : stmts) = inferExpr e >> checkProgram stmts
 checkProgram ((SVar tM id e) : stmts) = do
     env <- ask
-    (t, c) <- listen $ inferExpr e
+    (t, c) <- listen $ fixPoint id e
     (s, _) <- get
     subst <- liftEither $ runSolve c s
     let t1 = substitute subst t
@@ -81,6 +81,14 @@ checkProgram ((SVar tM id e) : stmts) = do
 checkProgram ((SPass e) : stmts) = throwError PassOutOfBlock
 checkProgram ((SData tcon tcvars vcons) : stmts) = checkProgram stmts -- TODO
 checkProgram [] = return ()
+
+fixPoint :: String -> Expr -> Infer Type
+fixPoint id e = do
+    let e1 = EItem $ IFunc Nothing Nothing id e
+    t1 <- inferExpr e1
+    tv <- fresh
+    addConst (TFunc tv tv) t1
+    return tv
 
 inferBlock :: [Stmt] -> Infer Type
 inferBlock ((SExpr e) : stmts) = inferExpr e >> inferBlock stmts
@@ -163,14 +171,11 @@ inferItem = \case
     IInt _ -> return TInt
     IFloat _ -> return TFloat
     IFunc pM rM p e -> do
-        tv <- fresh
-        t <- scoped p (Forall [] tv) (inferExpr e)
-        return (TFunc tv t)
-        -- pt <- freshMaybe pM
-        -- rt <- freshMaybe rM
-        -- et <- local (extend p $ Forall [] pt) (inferExpr e)
-        -- addConst rt et
-        -- return (TFunc pt rt)
+        pt <- freshMaybe pM
+        rt <- freshMaybe rM
+        et <- scoped p (Forall [] pt) (inferExpr e)
+        addConst rt et
+        return (TFunc pt rt)
     IUnit -> return TUnit
 
 substitute :: Subst -> Type -> Type

@@ -12,4 +12,4 @@ main = getArgs >>= readFile . head >>= putStrLn . interpret . run
         interpret (Right stmts) = 
             case typecheck stmts of
                 Left err -> "ERROR: " ++ show err
-                Right subst -> show stmts ++ "\n\n | Typecheck Passed | " ++ subst
+                Right msg -> "Typecheck Passed\n\n" ++ msg
