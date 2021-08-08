@@ -14,7 +14,7 @@ import AST
 import Type
 
 keywords :: [String]
-keywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float", "if", "else", "then"]
+keywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float", "if", "else", "then", "void"]
 
 identStr :: Parser String
 identStr = do
@@ -53,7 +53,7 @@ exprStmt = SExpr <$> expression <* spaces <* char ';'
 -- Expressions
 
 expression :: Parser Expr
-expression = block <|> if' <|> try assign <|> logicOr
+expression = block <|> try if' <|> try assign <|> logicOr
 
 block :: Parser Expr
 block = EBlock <$> (char '{' *> many (spaces *> statement <* spaces) <* char '}')
@@ -171,18 +171,28 @@ value = try function <|> string' <|> try bool <|> ident <|> (try float <|> integ
 -- Types
 
 pType :: Parser Type
-pType = try f <|> pBaseType
-    where
-    f = do 
-        input <- pBaseType
-        spaces *> string "->" *> spaces
-        TFunc input <$> pType
+pType = try pTFunc <|> try pTCon <|> pTItem
 
-pBaseType :: Parser Type
-pBaseType = try pLitType <|> (char '(' *> spaces *> pType <* spaces <* char ')')
+pTFunc :: Parser Type
+pTFunc = do 
+    input <- pTItem
+    spaces *> string "->" *> spaces
+    TFunc input <$> pType
 
-pLitType :: Parser Type
-pLitType = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string") <|> try (TUnit <$ string "()")
+pTCon :: Parser Type
+pTCon = do
+    first <- upper
+    rest <- many (letter <|> digit <|> oneOf "_'")
+    let con = first:rest
+    tps <- (spaces *> char '<' *> spaces *> sepBy pType (spaces *> char ',' *> spaces) <* spaces <* char '>' <* spaces) <|> ([] <$ spaces)
+    return $ TCon con tps
+
+pTItem :: Parser Type
+pTItem = try pTLit <|> (char '(' *> spaces *> pType <* spaces <* char ')')
+
+pTLit :: Parser Type
+pTLit = (TBool <$ string "bool") <|> (TInt <$ string "int") <|> (TFloat <$ string "float") <|> (TString <$ string "string")
+        <|> try (TUnit <$ string "()") <|> (TVoid <$ string "void") -- <|> (TCon <$> (spaces *> identStr <* spaces) <*> (spaces *> sepBy pType spaces <* spaces))
 
 --
 

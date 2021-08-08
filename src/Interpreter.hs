@@ -38,12 +38,10 @@ freshMaybe (Just t) = return t
 addConst :: Type -> Type -> Infer ()
 addConst a b = tell [CEq a b]
 
-typecheck :: [Stmt] -> Maybe TypeError
+typecheck :: [Stmt] -> Either TypeError Subst
 typecheck stmts = case runExcept (runRWST (checkProgram stmts) [] (Data.Map.empty, 0)) of
-    Left err -> Just err
-    Right (_, (s, _), c) -> leftToMaybe $ runSolve c s
-    where leftToMaybe (Left a) = Just a
-          leftToMaybe (Right _) = Nothing
+    Left err -> Left err
+    Right (_, (s, _), c) -> runSolve c s
 
 checkProgram :: [Stmt] -> Infer ()
 checkProgram ((SExpr e) : stmts) = inferExpr e >> checkProgram stmts
