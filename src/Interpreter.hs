@@ -14,7 +14,7 @@ import Data.Set as Set
 import AST
 import Type
 
-data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String
+data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | AlreadyDefined String
                | EmptyBlock | PassOutOfBlock | DataDeclInBlock
                | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
 
@@ -70,21 +70,24 @@ checkProgram :: [Stmt] -> Infer ()
 checkProgram ((SExpr e) : stmts) = inferExpr e >> checkProgram stmts
 checkProgram ((SVar tM id e) : stmts) = do
     env <- ask
-    (t, c) <- listen $ fixPoint id e
-    (s, _) <- get
-    subst <- liftEither $ runSolve c s
-    let t1 = substitute subst t
-        sc = generalize env t1
-    tv <- freshMaybe tM
-    addConst t1 tv
-    scoped id sc (checkProgram stmts)
+    case Map.lookup id env of
+        Just _ -> throwError $ AlreadyDefined id
+        Nothing -> do
+            (t, c) <- listen $ fixPoint id e
+            (s, _) <- get
+            subst <- liftEither $ runSolve c s
+            let t1 = substitute subst t
+                sc = generalize env t1
+            tv <- freshMaybe tM
+            addConst t1 tv
+            scoped id sc (checkProgram stmts)
 checkProgram ((SPass e) : stmts) = throwError PassOutOfBlock
 checkProgram ((SData tcon tcvars vcons) : stmts) = checkProgram stmts -- TODO
 checkProgram [] = return ()
 
 fixPoint :: String -> Expr -> Infer Type
 fixPoint id e = do
-    let e1 = EItem $ IFunc Nothing Nothing id e
+    let e1 = EFunc Nothing Nothing id e
     t1 <- inferExpr e1
     tv <- fresh
     addConst (TFunc tv tv) t1
@@ -108,7 +111,6 @@ inferBlock [] = throwError EmptyBlock
 
 inferExpr :: Expr -> Infer Type
 inferExpr = \case
-    EItem i -> inferItem i
     EBlock stmts -> inferBlock stmts
     EAssign l r -> do
         lt <- inferExpr l
@@ -143,6 +145,27 @@ inferExpr = \case
             Sub -> addConst TInt xt >> return TInt
             Not -> addConst TBool xt >> return TBool
             _ -> throwError Unknown
+    EIdent s -> do
+        env <- ask
+        case Map.lookup s env of
+            Nothing -> throwError $ NotDefined s
+            Just (Forall as t) -> do
+                ptvs <- mapM (const fresh) as
+                let inst = zip as ptvs
+                let vt = instantiate inst t
+                return vt
+    EString _ -> return TString
+    EBool _ -> return TBool
+    EInt _ -> return TInt
+    EFloat _ -> return TFloat
+    EFunc pM rM p e -> do
+        pt <- freshMaybe pM
+        rt <- freshMaybe rM
+        et <- scoped p (Forall [] pt) (inferExpr e)
+        addConst rt et
+        return (TFunc pt rt)
+    EUnit -> return TUnit
+
 
 instantiate :: [(Type, Type)] -> Type -> Type
 instantiate [] t = t
@@ -154,30 +177,7 @@ generalize env t = Forall as t
           tvsEnv = tvsList . Map.elems
           tvsList = Prelude.foldr (Set.union . tvsScheme) Set.empty 
           tvsScheme (Forall as t) = tvs t `Set.difference` Set.fromList as
-
-inferItem :: Item -> Infer Type
-inferItem = \case
-    IIdent s -> do
-        env <- ask
-        case Map.lookup s env of
-            Nothing -> throwError $ NotDefined s
-            Just (Forall as t) -> do
-                ptvs <- mapM (const fresh) as
-                let inst = zip as ptvs
-                let vt = instantiate inst t
-                return vt
-    IString _ -> return TString
-    IBool _ -> return TBool
-    IInt _ -> return TInt
-    IFloat _ -> return TFloat
-    IFunc pM rM p e -> do
-        pt <- freshMaybe pM
-        rt <- freshMaybe rM
-        et <- scoped p (Forall [] pt) (inferExpr e)
-        addConst rt et
-        return (TFunc pt rt)
-    IUnit -> return TUnit
-
+    
 substitute :: Subst -> Type -> Type
 substitute s = \case
     TCon ss ps -> TCon ss (Prelude.map (substitute s) ps)
