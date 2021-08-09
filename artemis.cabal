@@ -26,7 +26,8 @@ source-repository head
 library
   exposed-modules:
       AST
-      Interpreter
+      Infer
+      Kind
       Parser
       Type
   other-modules:

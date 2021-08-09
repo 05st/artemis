@@ -1,6 +1,6 @@
 {-# Language TupleSections #-}
 
-module Parser where
+module Parser (Parser.parse) where
 
 import Text.Parsec
 import Text.Parsec.String (Parser)
@@ -57,28 +57,25 @@ angles = Token.angles lexer
 -- Program --
 -------------
 
-program :: Parser [Stmt]
-program = whitespace *> many statement <* whitespace <* eof
+program :: Parser Program
+program = whitespace *> many declaration <* whitespace <* eof
 
-----------------
--- Statements --
-----------------
+------------------
+-- Declarations --
+------------------
 
-statement :: Parser Stmt
-statement = (SExpr <$> (expression <* semi)) <|> passStmt <|> varDecl <|> dataDecl
+declaration :: Parser Decl
+declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl
 
-passStmt :: Parser Stmt
-passStmt = SPass <$> (reserved "pass" *> expression <* semi)
-
-varDecl :: Parser Stmt
+varDecl :: Parser Decl
 varDecl = do
     reserved "let"
     var <- identifier
     t <- (Just <$> typeAnnotation) <|> (Nothing <$ whitespace)
     reservedOp "="
-    SVar t var <$> expression <* semi
+    DVar t var <$> expression <* semi
 
-dataDecl :: Parser Stmt
+dataDecl :: Parser Decl
 dataDecl = do
     reserved "data"
     con <- identifier
@@ -86,12 +83,22 @@ dataDecl = do
     reservedOp "="
     vcons <- sepBy1 vcon (reservedOp "|")
     semi
-    return $ SData con tvars vcons
+    return $ DData con tvars vcons
     where
         vcon = do
             con <- identifier
             tvars <- parens (sepBy typeVar comma) <|> ([] <$ whitespace)
             return (con, tvars)
+
+----------------
+-- Statements --
+----------------
+
+statement :: Parser Stmt
+statement = (SExpr <$> (expression <* semi)) <|> passStmt
+
+passStmt :: Parser Stmt
+passStmt = SPass <$> (reserved "pass" *> expression <* semi)
 
 -----------------
 -- Expressions --
@@ -169,7 +176,7 @@ value = try function <|> (try float <|> (EInt <$> integer)) <|> bool <|> (EStrin
 
 opTable :: OperatorTable String () Identity Expr
 opTable = [
-        [Prefix (reservedOp "-" >> return (EUnary Sub)),
+        [Prefix (reservedOp "-" >> return (EUnary Neg)),
          Prefix (reservedOp "!" >> return (EUnary Not))],
 
         [Infix (reservedOp "^" >> return (EBinary Exp)) AssocRight],
@@ -204,7 +211,7 @@ typeAnnotation :: Parser Type
 typeAnnotation = colon *> type'
 
 type' :: Parser Type
-type' = try funcType <|> try conType <|> baseType
+type' = try funcType <|> baseType <|> conType 
 
 funcType :: Parser Type
 funcType = do
@@ -219,13 +226,17 @@ conType = do
     return $ TCon con tps
 
 typeVar :: Parser Type
-typeVar = TVar <$> identifier
+typeVar = TVar . TV <$> identifier
 
 baseType :: Parser Type
 baseType = (TBool <$ reserved "bool") <|> (TInt <$ reserved "int") <|> (TFloat <$ reserved "float") <|> (TString <$ reserved "string")
        <|> try (TUnit <$ reserved "()") <|> (TVoid <$ reserved "void") <|> typeVar <|> parens type'
 
-run :: String -> Either String [Stmt]
-run input = case parse program "artemis" input of
+---------
+-- Run --
+---------
+
+parse :: String -> Either String Program
+parse input = case Text.Parsec.parse program "artemis" input of
     Left err -> Left $ show err
-    Right stmts -> Right stmts
+    Right decls -> Right decls

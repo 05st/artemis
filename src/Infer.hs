@@ -1,6 +1,6 @@
 {-# Language LambdaCase #-}
 
-module Interpreter (typecheck) where
+module Infer where
 
 import Control.Monad.Reader
 import Control.Monad.Except
@@ -13,15 +13,20 @@ import Data.Set as Set
 
 import AST
 import Type
+import Kind
 
-data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | AlreadyDefined String
-               | EmptyBlock | PassOutOfBlock | DataDeclInBlock
-               | UnifyError Type Type | InfiniteType Type Type | Unknown deriving (Show)
+data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | Redefinition String
+               | EmptyBlock | GlobalPass | BlockData
+               | UnifyError Type Type | InfiniteType Type Type deriving (Show)
 
-type Infer a = RWST TEnv [Constraint] (Subst, Int) (Except TypeError) a
+type Infer a = RWST TEnv [Constraint] Int (Except TypeError) a
 type TEnv = Map String Scheme
-type Subst = Map Type Type
+type Subst = Map TVar Type
 
+infer :: Expr -> Infer Type
+infer = undefined
+
+{-
 primTEnv :: TEnv
 primTEnv = Map.empty
 
@@ -34,13 +39,12 @@ varNames = Prelude.map ('$':) $ [1..] >>= flip replicateM ['a'..'z']
 fresh :: Infer Type
 fresh = do
     (s, n) <- get
-    let t = TVar (varNames !! n)
-    put (Map.insert t t s, n + 1)
-    return t
+    put (s, n + 1)
+    return $ TVar (varNames !! n)
 
 freshMaybe :: Maybe Type -> Infer Type
 freshMaybe Nothing = fresh
-freshMaybe (Just t) = addTVarsRecursive t >> return t
+freshMaybe (Just t) = return t --addTVarsRecursive t >> return t
 
 addTVarsRecursive :: Type -> Infer ()
 addTVarsRecursive (TCon _ []) = return ()
@@ -55,7 +59,7 @@ addConst a b = tell [CEq a b]
 typecheck :: [Stmt] -> Either TypeError String
 typecheck stmts = case runExcept (runRWST (checkProgram stmts) primTEnv (Map.empty, 0)) of
     Left err -> Left err
-    Right (_, (s, _), c) -> Right . show $ runSolve c s
+    Right (_, (s, _), c) -> Right $ show (runSolve c s) ++ show (length c)
 
 scoped :: String -> Scheme -> Infer a -> Infer a
 scoped x sc m = do
@@ -78,8 +82,6 @@ checkProgram ((SVar tM id e) : stmts) = do
             subst <- liftEither $ runSolve c s
             let t1 = substitute subst t
                 sc = generalize env t1
-            tv <- freshMaybe tM
-            addConst t1 tv
             scoped id sc (checkProgram stmts)
 checkProgram ((SPass e) : stmts) = throwError PassOutOfBlock
 checkProgram ((SData tcon tcvars vcons) : stmts) = checkProgram stmts -- TODO
@@ -124,7 +126,7 @@ inferExpr = \case
         bt <- inferExpr b
         addConst at bt
         return at
-    ECall a f -> do
+    ECall f a -> do
         t1 <- inferExpr f
         t2 <- inferExpr a
         tv <- fresh
@@ -203,7 +205,7 @@ bind a t | t == a = return ()
          | otherwise = do
             s <- get
             case Map.lookup a s of
-                Nothing -> throwError $ UnifyError a t -- TODO: better error message
+                Nothing -> put (Map.insert a t s) -- TODO: better error message
                 Just a' -> if a /= a'
                     then throwError $ Mismatch a' t
                     else put (Map.insert a t s)
@@ -221,3 +223,4 @@ runSolve :: [Constraint] -> Subst -> Either TypeError Subst
 runSolve c s = case runState (runExceptT (solve c)) s of
     (Left err, _) -> Left err
     (Right _, s) -> Right s
+-}

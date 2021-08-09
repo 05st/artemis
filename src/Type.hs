@@ -4,10 +4,13 @@
 module Type where
 
 import Data.List
+import Data.Set
 
-data Type = TCon String [Type] | TVar String deriving (Eq, Ord)
+newtype TVar = TV String deriving (Eq, Ord)
+
+data Type = TCon String [Type] | TVar TVar deriving (Eq, Ord)
 data Constraint = CEq Type Type deriving (Show)
-data Scheme = Forall [Type] Type
+data Scheme = Forall (Set Type) Type deriving (Eq, Show)
 
 pattern TBool = TCon "bool" []
 pattern TInt = TCon "int" []
@@ -21,5 +24,5 @@ instance Show Type where
     show = \case
         TFunc a b -> '(':show a ++ " -> " ++ show b ++ ")"
         TCon s [] -> s
-        TCon s p -> s ++ '<':intercalate ", " (map show p) ++ ">"
-        TVar s -> s
+        TCon s p -> s ++ '<':intercalate ", " (Prelude.map show p) ++ ">"
+        TVar (TV s) -> s
