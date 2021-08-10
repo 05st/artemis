@@ -7,7 +7,7 @@ import Type
 type Program = [Decl]
 data Decl = DStmt Stmt | DVar (Maybe Type) String Expr | DData String [Type] [(String, [Type])] deriving (Show)
 data Stmt = SExpr Expr | SPass Expr deriving (Show)
-data Expr = EBlock [Stmt] | EAssign Expr Expr | EIf Expr Expr Expr | ECall Expr Expr | EBinary BinOp Expr Expr | EUnary UnaOp Expr
+data Expr = EBlock [Decl] | EAssign Expr Expr | EIf Expr Expr Expr | ECall Expr Expr | EBinary BinOp Expr Expr | EUnary UnaOp Expr
           | EIdent String | EString String | EBool Bool | EInt Integer | EFloat Double | EFunc (Maybe Type) (Maybe Type) String Expr | EUnit deriving (Show)
 
 data BinOp = Or | And | NotEqual | Equal | GreaterEqual | Greater | LesserEqual | Lesser | Add | Sub | Mul | Div | Exp deriving (Eq, Show)

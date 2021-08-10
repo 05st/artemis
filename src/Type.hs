@@ -6,11 +6,11 @@ module Type where
 import Data.List
 import Data.Set
 
-newtype TVar = TV String deriving (Eq, Ord)
+newtype TVar = TV String deriving (Show, Eq, Ord)
 
 data Type = TCon String [Type] | TVar TVar deriving (Eq, Ord)
-data Constraint = CEq Type Type deriving (Show)
-data Scheme = Forall (Set Type) Type deriving (Eq, Show)
+data Constraint = Type :~ Type deriving (Show)
+data Scheme = Forall (Set TVar) Type deriving (Eq, Show)
 
 pattern TBool = TCon "bool" []
 pattern TInt = TCon "int" []

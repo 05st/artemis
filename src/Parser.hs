@@ -108,7 +108,7 @@ term :: Parser Expr
 term = block <|> if' <|> try assign <|> item
 
 block :: Parser Expr
-block = EBlock <$> braces (many statement)
+block = EBlock <$> braces (many declaration)
 
 if' :: Parser Expr
 if' = do
