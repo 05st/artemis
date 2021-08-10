@@ -68,6 +68,11 @@ fresh = do
 constrain :: Constraint -> Infer ()
 constrain = tell . (:[])
 
+constrainIf :: (Maybe Type, Type) -> Infer ()
+constrainIf (a, b) = case a of
+    Just t -> constrain $ t :~ b
+    Nothing -> return ()
+
 compose :: Subst -> Subst -> Subst
 compose a b = Map.map (apply a) b `Map.union` a
 
@@ -178,7 +183,7 @@ createValueConsts tc tps ((vn, vts) : vcs) n = do
             [] -> scoped vn (generalize env $ TCon tc tps) (createValueConsts tc tps vcs n)
             _ -> do
                     let sc = generalize env $ foldr1 (.) [TFunc t | t <- vts] (TCon tc tps)
-                    trace (show sc) $ scoped vn sc (createValueConsts tc tps vcs n)
+                    scoped vn sc (createValueConsts tc tps vcs n)
 
 inferVarDecl :: Decl -> Infer Scheme
 inferVarDecl (DVar tM id e) = do
@@ -188,7 +193,7 @@ inferVarDecl (DVar tM id e) = do
     let t1 = apply s t
         sc = generalize env t1 
     tv <- flip fromMaybe tM <$> fresh
-    constrain $ tv :~ t1
+    constrainIf (tM, t1)
     return sc
 inferVarDecl _ = undefined -- Not possible
 
@@ -261,4 +266,6 @@ infer = \case
     EFunc pM rM p e -> do
         tv <- fresh
         t <- scoped p (Forall Set.empty tv) (infer e)
+        constrainIf (pM, tv)
+        constrainIf (rM, t)
         return $ tv `TFunc` t

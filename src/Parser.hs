@@ -79,7 +79,7 @@ dataDecl :: Parser Decl
 dataDecl = do
     reserved "data"
     con <- identifier
-    tvars <- angles (sepBy typeVar comma) <|> ([] <$ whitespace)
+    tvars <- angles (sepBy typeVar comma <|> ([] <$ whitespace))
     reservedOp "="
     vcons <- sepBy1 vcon (reservedOp "|")
     semi
@@ -211,7 +211,7 @@ typeAnnotation :: Parser Type
 typeAnnotation = colon *> type'
 
 type' :: Parser Type
-type' = try funcType <|> baseType <|> conType 
+type' = try funcType <|> try conType <|> baseType
 
 funcType :: Parser Type
 funcType = do
@@ -222,7 +222,7 @@ funcType = do
 conType :: Parser Type
 conType = do
     con <- identifier
-    tps <- angles (sepBy type' comma) <|> ([] <$ whitespace)
+    tps <- angles (sepBy type' comma <|> ([] <$ whitespace))
     return $ TCon con tps
 
 typeVar :: Parser Type
