@@ -87,7 +87,7 @@ dataDecl = do
     where
         vcon = do
             con <- identifier
-            tvars <- parens (sepBy typeVar comma) <|> ([] <$ whitespace)
+            tvars <- parens (sepBy type' comma) <|> ([] <$ whitespace)
             return (con, tvars)
 
 ----------------

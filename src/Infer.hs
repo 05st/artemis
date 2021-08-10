@@ -1,7 +1,7 @@
 {-# Language LambdaCase #-}
 {-# Language TypeSynonymInstances #-}
 
-module Infer (typecheck) where
+module Infer (typecheck, generalize) where
 
 import Control.Monad.Reader
 import Control.Monad.Except
@@ -13,11 +13,13 @@ import Data.Functor.Identity
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import Debug.Trace
+
 import AST
 import Type
 import Kind
 
-data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | Redefinition String
+data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | NotDefinedMany [TVar] | Redefinition String
                | EmptyBlock | GlobalPass | BlockData
                | UnifyError [Type] [Type] | InfiniteType TVar Type deriving (Show)
 
@@ -76,8 +78,9 @@ generalize env t = Forall vs t
 instantiate :: Scheme -> Infer Type
 instantiate (Forall vs t) = do
     let vs' = Set.toList vs
-    let nvs = map TVar vs'
-    return $ apply (Map.fromList (zip vs' nvs)) t
+    nvs <- mapM (const fresh) vs'
+    let s = Map.fromList (zip vs' nvs)
+    return $ apply s t
 
 -----------------
 -- Unification --
@@ -118,7 +121,7 @@ runSolve cs = runIdentity $ runExceptT $ solve Map.empty cs
 typecheck :: Program -> Either TypeError String
 typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls) Map.empty 0 of
     Left err -> Left err
-    Right (_, _, cs) -> Right $ show (runSolve cs) ++ show cs
+    Right (_, _, cs) -> Right $ show (runSolve cs) ++ "\n\n" ++ show cs
 
 --------------------
 -- Operator Types --
@@ -159,8 +162,28 @@ inferProgram [] = return ()
 inferProgram (d : ds) =
     case d of
         DStmt s -> inferStmt s *> inferProgram ds
-        DData {} -> inferProgram ds -- TODO
-        DVar {} -> inferVarDecl d (inferProgram ds)
+        DData tc tps vcs -> createValueConsts tc tps vcs (inferProgram ds)
+        DVar _ id _ -> inferVarDecl d (inferProgram ds) -- >>= \sc -> scoped id sc (inferProgram ds)
+
+createValueConsts :: String -> [Type] -> [(String, [Type])] -> Infer a -> Infer a
+createValueConsts _ _ [] n = n
+createValueConsts tc tps ((vn, vts) : vcs) n = do
+    env <- ask
+    let vtps = tvs tps
+    let vvts = tvs vts
+    if (vtps `Set.intersection` vvts) /= vvts
+        then throwError $ NotDefinedMany (Set.toList (vvts `Set.difference` vtps))
+        else case vts of
+            [] -> scoped vn (generalize env $ TCon tc tps) (createValueConsts tc tps vcs n)
+            _ -> do
+                    let sc = generalize env $ foldr1 (.) [TFunc t | t <- vts] (TCon tc tps)
+                    trace (show sc) $ scoped vn sc (createValueConsts tc tps vcs n)
+
+{- Just(a) VConst(int, bool, etc);
+ - type of Just: p1 `TFunc` (TCon tc [p1])
+ - type of 
+ -
+ -}
 
 inferVarDecl :: Decl -> Infer a -> Infer a
 inferVarDecl (DVar tM id e) next = do
@@ -168,8 +191,10 @@ inferVarDecl (DVar tM id e) next = do
     (t, c) <- listen $ fixPoint id e
     s <- liftEither $ runSolve c 
     let t1 = apply s t
-        sc = generalize env t1
-    scoped id sc next
+        sc = generalize env t1 
+    tv <- flip fromMaybe tM <$> fresh
+    constrain $ tv :~ t1
+    trace (show sc) $ scoped id sc next
 inferVarDecl _ _ = undefined -- Not possible
 
 fixPoint :: String -> Expr -> Infer Type
@@ -187,7 +212,7 @@ inferBlock (d : ds) =
         DStmt (SPass e) -> infer e
         DStmt s -> inferStmt s *> inferBlock ds
         DData {} -> throwError BlockData
-        DVar {} -> inferVarDecl d (inferBlock ds)
+        DVar _ id _ -> inferVarDecl d (inferBlock ds) -- >>= \sc -> scoped id sc (inferBlock ds)
 
 inferStmt :: Stmt -> Infer ()
 inferStmt = \case
