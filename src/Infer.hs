@@ -163,8 +163,9 @@ inferProgram (d : ds) =
     case d of
         DStmt s -> inferStmt s *> inferProgram ds
         DData tc tps vcs -> createValueConsts tc tps vcs (inferProgram ds)
-        DVar _ id _ -> inferVarDecl d (inferProgram ds) -- >>= \sc -> scoped id sc (inferProgram ds)
+        DVar _ id _ -> inferVarDecl d >>= \sc -> scoped id sc (inferProgram ds)
 
+-----------Constructors
 createValueConsts :: String -> [Type] -> [(String, [Type])] -> Infer a -> Infer a
 createValueConsts _ _ [] n = n
 createValueConsts tc tps ((vn, vts) : vcs) n = do
@@ -179,14 +180,8 @@ createValueConsts tc tps ((vn, vts) : vcs) n = do
                     let sc = generalize env $ foldr1 (.) [TFunc t | t <- vts] (TCon tc tps)
                     trace (show sc) $ scoped vn sc (createValueConsts tc tps vcs n)
 
-{- Just(a) VConst(int, bool, etc);
- - type of Just: p1 `TFunc` (TCon tc [p1])
- - type of 
- -
- -}
-
-inferVarDecl :: Decl -> Infer a -> Infer a
-inferVarDecl (DVar tM id e) next = do
+inferVarDecl :: Decl -> Infer Scheme
+inferVarDecl (DVar tM id e) = do
     env <- ask
     (t, c) <- listen $ fixPoint id e
     s <- liftEither $ runSolve c 
@@ -194,8 +189,8 @@ inferVarDecl (DVar tM id e) next = do
         sc = generalize env t1 
     tv <- flip fromMaybe tM <$> fresh
     constrain $ tv :~ t1
-    trace (show sc) $ scoped id sc next
-inferVarDecl _ _ = undefined -- Not possible
+    return sc
+inferVarDecl _ = undefined -- Not possible
 
 fixPoint :: String -> Expr -> Infer Type
 fixPoint id e = do
@@ -212,7 +207,7 @@ inferBlock (d : ds) =
         DStmt (SPass e) -> infer e
         DStmt s -> inferStmt s *> inferBlock ds
         DData {} -> throwError BlockData
-        DVar _ id _ -> inferVarDecl d (inferBlock ds) -- >>= \sc -> scoped id sc (inferBlock ds)
+        DVar _ id _ -> inferVarDecl d >>= \sc -> scoped id sc (inferBlock ds)
 
 inferStmt :: Stmt -> Infer ()
 inferStmt = \case
