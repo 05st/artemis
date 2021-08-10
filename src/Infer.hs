@@ -26,6 +26,10 @@ type Solver a = ExceptT TypeError Identity a
 type Env = Map.Map String Scheme
 type Subst = Map.Map TVar Type
 
+-----------------------------
+-- Substitutable Typeclass --
+-----------------------------
+
 class Substitutable a where
     tvs :: a -> Set.Set TVar
     apply :: Subst -> a -> a
@@ -48,6 +52,10 @@ instance Substitutable a => Substitutable [a] where
     tvs l = foldr (Set.union . tvs) Set.empty l
     apply s = map (apply s)
 
+---------------------
+-- Misc. Functions --
+---------------------
+
 fresh :: Infer Type
 fresh = do
     n <- get
@@ -68,15 +76,19 @@ generalize env t = Forall vs t
 instantiate :: Scheme -> Infer Type
 instantiate (Forall vs t) = do
     let vs' = Set.toList vs
-    nvs <- mapM (const fresh) vs'
+    let nvs = map TVar vs'
     return $ apply (Map.fromList (zip vs' nvs)) t
+
+-----------------
+-- Unification --
+-----------------
 
 unify :: Type -> Type -> Solver Subst
 unify a b | a == b = return Map.empty
 unify (TVar v) t = bind v t
 unify t (TVar v) = bind v t
 unify a@(TCon c1 ts1) b@(TCon c2 ts2)
-    | a /= b = throwError $ Mismatch a b
+    | c1 /= c2 = throwError $ Mismatch a b
     | otherwise = unifyMany ts1 ts2
 
 unifyMany :: [Type] -> [Type] -> Solver Subst
@@ -108,10 +120,9 @@ typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls) M
     Left err -> Left err
     Right (_, _, cs) -> Right $ show (runSolve cs) ++ show cs
 
-scoped :: String -> Scheme -> Infer a -> Infer a
-scoped x sc m = do
-    let scope e = Map.insert x sc (Map.delete x e)
-    local scope m
+--------------------
+-- Operator Types --
+--------------------
 
 bOpType :: Type -> Type -> BinOp -> Type
 bOpType l r = \case
@@ -134,6 +145,15 @@ uOpType _ = \case
     Neg -> TInt `TFunc` TInt
     Not -> TBool `TFunc` TBool
 
+-----------------------
+-- Build Constraints --
+-----------------------
+
+scoped :: String -> Scheme -> Infer a -> Infer a
+scoped x sc m = do
+    let scope e = Map.insert x sc (Map.delete x e)
+    local scope m
+
 inferProgram :: [Decl] -> Infer ()
 inferProgram [] = return ()
 inferProgram (d : ds) =
@@ -146,7 +166,7 @@ inferVarDecl :: Decl -> Infer a -> Infer a
 inferVarDecl (DVar tM id e) next = do
     env <- ask
     (t, c) <- listen $ fixPoint id e
-    s <- liftEither $ runSolve c
+    s <- liftEither $ runSolve c 
     let t1 = apply s t
         sc = generalize env t1
     scoped id sc next
