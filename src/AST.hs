@@ -2,13 +2,24 @@
 
 module AST where
 
+import Data.List (intercalate)
+
 import Type
 
-type Program = [Decl]
-data Decl = DStmt Stmt | DVar (Maybe Type) String Expr | DData String [Type] [(String, [Type])] deriving (Show)
-data Stmt = SExpr Expr | SPass Expr deriving (Show)
-data Expr = EBlock [Decl] | EAssign Expr Expr | EMatch Expr [(Pattern, Expr)] | EIf Expr Expr Expr | ECall Expr Expr | EBinary BinOp Expr Expr | EUnary UnaOp Expr
-          | EIdent String | EString String | EBool Bool | EInt Integer | EFloat Double | EFunc (Maybe Type) (Maybe Type) String Expr | EUnit deriving (Show)
+type Program a = [Decl a]
+data Decl a = DStmt (Stmt a) | DVar (Maybe Type) String (Expr a) | DData String [Type] [(String, [Type])] deriving (Show)
+data Stmt a = SExpr (Expr a) | SPass (Expr a) deriving (Show)
+data Expr a = EBlock [Decl a] a | EAssign (Expr a) (Expr a) | EMatch (Expr a) [(Pattern, Expr a)] | EIf (Expr a) (Expr a) (Expr a) | ECall (Expr a) (Expr a)
+             | EBinary BinOp (Expr a) (Expr a) | EUnary UnaOp (Expr a)
+             | EIdent String | EString String | EBool Bool | EInt Integer | EFloat Double | EUnit | EFunc (Maybe Signature) String (Expr a)
+             deriving (Show)
+
+type UntypedProgram = Program ()
+type TypedProgram = Program Type
+type UntypedDecl = Decl ()
+type TypedDecl = Decl Type
+type UntypedExpr = Expr ()
+type TypedExpr = Expr Type
 
 data BinOp = Or | And | NotEqual | Equal | GreaterEqual | Greater | LesserEqual | Lesser | Add | Sub | Mul | Div | Exp deriving (Eq, Show)
 data UnaOp = Neg | Not deriving (Show)
@@ -16,15 +27,21 @@ data UnaOp = Neg | Not deriving (Show)
 -- Value Constructor Matching (VC FuncName [Vars])
 data Pattern = VC String [String] deriving (Show)
 
+data Signature = SigFunc Type Type deriving (Show)
+
 {-
+instance Show Decl where
+    show = \case
+        DStmt s -> show s
+        DVar _ id e -> "let " ++ id ++ " = " ++ show e ++ ";\n"
+        DData tc ps vcs -> "data " ++ tc ++ '<':intercalate ", " (map show ps) ++ "> = " ++ intercalate " | " (map show vcs) ++ ";\n"
+
 instance Show Stmt where
     show = \case
-        SExpr e -> show e ++ ";"
-        SPass e -> "pass " ++ show e ++ ";"
-        SVar _ id e -> "let " ++ id ++ " = " ++ show e ++ ";"
-        SData tc ps vcs -> "data " ++ tc ++ '<':intercalate ", " (map show ps) ++ "> = " ++ intercalate " | " (map show vcs) ++ ";"
+        SExpr e -> show e ++ ";\n"
+        SPass e -> "pass " ++ show e ++ ";\n"
 
-instance Show Oper where
+instance Show BinOp where
     show = \case
         Or -> "||"
         And -> "&&"
@@ -38,8 +55,12 @@ instance Show Oper where
         Sub -> "-"
         Mul -> "*"
         Div -> "/"
-        Not -> "!"
         Exp -> "^"
+
+instance Show UnaOp where
+    show = \case
+        Neg -> "-"
+        Not -> "!"
 
 instance Show Expr where
     show = \case
@@ -56,4 +77,5 @@ instance Show Expr where
         EFloat float -> show float
         EFunc _ _ p e -> "fn(" ++ p ++ ") => " ++ show e
         EUnit -> "()"
+        EMatch e ps -> "match " ++ show e ++ " with " ++ intercalate ", " (map show ps)
 -}
