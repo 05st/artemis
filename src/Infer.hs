@@ -3,11 +3,13 @@
 
 module Infer (typecheck, generalize) where
 
+
 import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.RWS
 
+import Data.List
 import Data.Maybe
 import Data.Functor.Identity
 import qualified Data.Map as Map
@@ -20,7 +22,7 @@ import Type
 import Kind
 
 data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | NotDefinedMany [TVar] | Redefinition String
-               | EmptyBlock | GlobalPass | BlockData
+               | EmptyBlock | GlobalPass | BlockData | EmptyMatch
                | UnifyError [Type] [Type] | InfiniteType TVar Type deriving (Show)
 
 type Infer a = RWST Env [Constraint] Int (Except TypeError) a
@@ -162,6 +164,10 @@ scoped x sc m = do
     let scope e = Map.insert x sc (Map.delete x e)
     local scope m
 
+scopedMany :: [String] -> [Scheme] -> Infer a -> Infer a
+scopedMany [] [] m = m
+scopedMany (x : xs) (sc : scs) m = scoped x sc (scopedMany xs scs m)
+
 inferProgram :: [Decl] -> Infer ()
 inferProgram [] = return ()
 inferProgram (d : ds) =
@@ -219,6 +225,11 @@ inferStmt = \case
     SExpr e -> void $ infer e
     SPass e -> throwError GlobalPass
 
+lookupEnv :: String -> Infer Type
+lookupEnv id = ask >>= \e -> case Map.lookup id e of
+    Nothing -> throwError $ NotDefined id
+    Just t -> instantiate t
+
 infer :: Expr -> Infer Type
 infer = \case
     EBlock decls -> undefined
@@ -253,11 +264,7 @@ infer = \case
         tv <- fresh
         constrain $ (at `TFunc` tv) :~ uOpType at op
         return tv
-    EIdent id -> do
-        env <- ask
-        case Map.lookup id env of
-            Nothing -> throwError $ NotDefined id
-            Just t -> instantiate t
+    EIdent id -> lookupEnv id
     EString _ -> return TString
     EBool _ -> return TBool
     EInt _ -> return TInt
@@ -269,3 +276,24 @@ infer = \case
         constrainIf (pM, tv)
         constrainIf (rM, t)
         return $ tv `TFunc` t
+    EMatch e bs -> do
+        et <- infer e
+        bts <- mapM (inferBranch et) bs
+        case bts of
+            [] -> throwError EmptyMatch
+            (bt : bts) -> bt <$ sequence_ [constrain (t :~ bt) | t <- bts]
+    
+inferBranch :: Type -> (Pattern, Expr) -> Infer Type
+inferBranch mt (VC c vns, e) = do
+    ct <- lookupEnv c
+    let (rt, ts) = (\l -> (last l, init l)) . funcTypes . reverseFunc $ ct
+    constrain $ rt :~ mt
+    scopedMany vns (Forall Set.empty `map` ts) (infer e)
+
+reverseFunc :: Type -> Type
+reverseFunc (a `TFunc` b) = reverseFunc a `TFunc` reverseFunc b
+reverseFunc t = t
+
+funcTypes :: Type -> [Type]
+funcTypes (a `TFunc` b) = funcTypes a ++ funcTypes b
+funcTypes t = [t]

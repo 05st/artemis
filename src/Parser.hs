@@ -20,7 +20,7 @@ import Type
 -----------
 
 rKeywords :: [String]
-rKeywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float", "if", "else", "then", "void", "data", "()"]
+rKeywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float", "if", "else", "then", "match", "with", "void", "data", "()"]
 
 rOperators :: [String]
 rOperators = ["+", "-", "*", "/", "^", "=", "==", "!=", ">", ">=", "<", "<=", "!", "&&", "||", "->", "=>", "|"]
@@ -105,7 +105,7 @@ passStmt = SPass <$> (reserved "pass" *> expression <* semi)
 -----------------
 
 term :: Parser Expr
-term = block <|> if' <|> try assign <|> item
+term = block <|> if' <|> match <|> try assign <|> item
 
 block :: Parser Expr
 block = EBlock <$> braces (many declaration)
@@ -118,6 +118,20 @@ if' = do
     a <- expression
     reserved "else"
     EIf cond a <$> expression
+
+pattern :: Parser Pattern
+pattern = do
+    con <- identifier
+    vars <- parens (sepBy1 identifier comma) <|> ([] <$ whitespace)
+    return $ VC con vars
+
+match :: Parser Expr
+match = do
+    reserved "match"
+    expr <- expression
+    reserved "with"
+    branches <- sepBy1 ((,) <$> pattern <*> (reservedOp "->" *> expression)) comma
+    return $ EMatch expr branches
 
 assign :: Parser Expr
 assign = do
