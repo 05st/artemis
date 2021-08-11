@@ -22,12 +22,13 @@ import Type
 import Kind
 
 data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | NotDefinedMany [TVar] | Redefinition String
-               | EmptyBlock | GlobalPass | BlockData | EmptyMatch
+               | EmptyBlock | GlobalPass | BlockData | EmptyMatch | NotExhaustive [String]
                | UnifyError [Type] [Type] | InfiniteType TVar Type deriving (Show)
 
-type Infer a = RWST Env [Constraint] Int (Except TypeError) a
+type Infer a = RWST (Env, DMap) [Constraint] Int (Except TypeError) a
 type Solver a = ExceptT TypeError Identity a
 type Env = Map.Map String Scheme
+type DMap = Map.Map String [String]
 type Subst = Map.Map TVar Type
 
 -----------------------------
@@ -126,7 +127,7 @@ runSolve :: [Constraint] -> Either TypeError Subst
 runSolve cs = runIdentity $ runExceptT $ solve Map.empty cs
 
 typecheck :: Program -> Either TypeError String
-typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls) Map.empty 0 of
+typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls) (Map.empty, Map.empty) 0 of
     Left err -> Left err
     Right (_, _, cs) -> Right $ show (runSolve cs) ++ "\n\n" ++ show cs
 
@@ -161,12 +162,12 @@ uOpType _ = \case
 
 scoped :: String -> Scheme -> Infer a -> Infer a
 scoped x sc m = do
-    let scope e = Map.insert x sc (Map.delete x e)
+    let scope (e, d) = (Map.insert x sc (Map.delete x e), d)
     local scope m
 
 scopedMany :: [String] -> [Scheme] -> Infer a -> Infer a
-scopedMany [] [] m = m
 scopedMany (x : xs) (sc : scs) m = scoped x sc (scopedMany xs scs m)
+scopedMany _ _ m = m
 
 inferProgram :: [Decl] -> Infer ()
 inferProgram [] = return ()
@@ -180,20 +181,22 @@ inferProgram (d : ds) =
 createValueConsts :: String -> [Type] -> [(String, [Type])] -> Infer a -> Infer a
 createValueConsts _ _ [] n = n
 createValueConsts tc tps ((vn, vts) : vcs) n = do
-    env <- ask
+    (env, _) <- ask
     let vtps = tvs tps
     let vvts = tvs vts
     if (vtps `Set.intersection` vvts) /= vvts
         then throwError $ NotDefinedMany (Set.toList (vvts `Set.difference` vtps))
         else case vts of
-            [] -> scoped vn (generalize env $ TCon tc tps) (createValueConsts tc tps vcs n)
+            [] -> let sc = (generalize env $ TCon tc tps) ; scope (e, d) = (Map.insert vn sc (Map.delete vn e), Map.adjust (vn:) tc d)
+                  in local scope (createValueConsts tc tps vcs n)
             _ -> do
                     let sc = generalize env $ foldr1 (.) [TFunc t | t <- vts] (TCon tc tps)
-                    scoped vn sc (createValueConsts tc tps vcs n)
+                    let scope (e, d) = (Map.insert vn sc (Map.delete vn e), Map.adjust (vn:) tc d)
+                    local scope (createValueConsts tc tps vcs n)
 
 inferVarDecl :: Decl -> Infer Scheme
 inferVarDecl (DVar tM id e) = do
-    env <- ask
+    (env, _) <- ask
     (t, c) <- listen $ fixPoint id e
     s <- liftEither $ runSolve c 
     let t1 = apply s t
@@ -226,9 +229,9 @@ inferStmt = \case
     SPass e -> throwError GlobalPass
 
 lookupEnv :: String -> Infer Type
-lookupEnv id = ask >>= \e -> case Map.lookup id e of
+lookupEnv id = ask >>= (\e -> case Map.lookup id e of
     Nothing -> throwError $ NotDefined id
-    Just t -> instantiate t
+    Just t -> instantiate t) . fst
 
 infer :: Expr -> Infer Type
 infer = \case
@@ -281,7 +284,7 @@ infer = \case
         bts <- mapM (inferBranch et) bs
         case bts of
             [] -> throwError EmptyMatch
-            (bt : bts) -> bt <$ sequence_ [constrain (t :~ bt) | t <- bts]
+            (bt : bts') -> bt <$ sequence_ [constrain (t :~ bt) | t <- bts']
     
 inferBranch :: Type -> (Pattern, Expr) -> Infer Type
 inferBranch mt (VC c vns, e) = do
@@ -289,11 +292,16 @@ inferBranch mt (VC c vns, e) = do
     let (rt, ts) = (\l -> (last l, init l)) . funcTypes . reverseFunc $ ct
     constrain $ rt :~ mt
     scopedMany vns (Forall Set.empty `map` ts) (infer e)
+    where
+        reverseFunc (a `TFunc` b) = reverseFunc a `TFunc` reverseFunc b
+        reverseFunc t = t
+        funcTypes (a `TFunc` b) = funcTypes a ++ funcTypes b
+        funcTypes t = [t]
 
-reverseFunc :: Type -> Type
-reverseFunc (a `TFunc` b) = reverseFunc a `TFunc` reverseFunc b
-reverseFunc t = t
-
-funcTypes :: Type -> [Type]
-funcTypes (a `TFunc` b) = funcTypes a ++ funcTypes b
-funcTypes t = [t]
+exhaustiveCheck :: String -> [String] -> Infer ()
+exhaustiveCheck tc bs = do
+    (_, dmap) <- ask
+    case Map.lookup tc dmap of
+        Nothing -> throwError $ NotDefined tc
+        Just vns -> let bs' = Set.fromList bs ; vns' = Set.fromList vns
+                    in when (bs' /= vns') (throwError $ NotExhaustive (Set.toList (vns' `Set.difference` bs')))
