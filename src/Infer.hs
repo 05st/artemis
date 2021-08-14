@@ -59,6 +59,37 @@ instance Substitutable a => Substitutable [a] where
     tvs l = foldr (Set.union . tvs) Set.empty l
     apply s = map (apply s)
 
+instance Substitutable a => Substitutable (Decl a) where
+    tvs = error "tvs called on decl"
+    apply s = \case
+        DVar tM id e -> DVar tM id (apply s e)
+        DStmt st -> DStmt (apply s st)
+        DData {} -> error "attempt to substitute data decl"
+
+instance Substitutable a => Substitutable (Stmt a) where
+    tvs = error "tvs called on stmt"
+    apply s = \case
+        SExpr e -> SExpr (apply s e)
+        SPass e -> SPass (apply s e)
+
+instance Substitutable a => Substitutable (Expr a) where
+    tvs = error "tvs called on expr"
+    apply s = \case
+        EBlock t ds -> EBlock (apply s t) $ map (apply s) ds
+        EAssign t l r -> EAssign (apply s t) (apply s l) (apply s r)
+        EMatch t e bs -> let (ps, bes) = unzip bs in EMatch (apply s t) (apply s e) (zip ps (map (apply s) bes))
+        EIf t c a b -> EIf (apply s t) (apply s c) (apply s a) (apply s b)
+        ECall t f a -> ECall (apply s t) (apply s f) (apply s a)
+        EBinary t o l r -> EBinary (apply s t) o (apply s l) (apply s r)
+        EUnary t o a -> EUnary (apply s t) o (apply s a)
+        EIdent t id -> EIdent (apply s t) id
+        EString t st -> EString (apply s t) st
+        EBool t b -> EBool (apply s t) b
+        EInt t i -> EInt (apply s t) i
+        EFloat t f -> EFloat (apply s t) f
+        EUnit t -> EUnit (apply s t)
+        EFunc t pM rM p e -> EFunc (apply s t) pM rM p (apply s e)
+
 ---------------------
 -- Misc. Functions --
 ---------------------
@@ -131,7 +162,7 @@ runSolve cs = runIdentity $ runExceptT $ solve Map.empty cs
 typecheck :: UntypedProgram -> Either TypeError String
 typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls []) (Map.empty, Map.empty) 0 of
     Left err -> Left err
-    Right (p, _, cs) -> Right $ show (runSolve cs) ++ "\n\n" ++ show cs ++ "\n\n" ++ show p
+    Right (p, _, cs) -> runSolve cs >>= \s -> return $ show (apply s p)
 
 --------------------
 -- Operator Types --
