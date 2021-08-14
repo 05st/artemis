@@ -27,10 +27,11 @@ data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | Not
                | EmptyBlock | GlobalPass | BlockData | EmptyMatch | NotExhaustive [String]
                | UnifyError [Type] [Type] | InfiniteType TVar Type deriving (Show)
 
-type Infer a = RWST (Env, DMap) [Constraint] Int (Except TypeError) a
-type Solver a = ExceptT TypeError Identity a
 type Env = Map.Map String Scheme
 type DMap = Map.Map String [String]
+type Matches = [(Type, [String])]
+type Infer a = RWST (Env, DMap) [Constraint] (Int, Matches) (Except TypeError) a
+type Solver a = ExceptT TypeError Identity a
 type Subst = Map.Map TVar Type
 
 -----------------------------
@@ -96,13 +97,18 @@ instance Substitutable a => Substitutable (Expr a) where
 
 fresh :: Infer Type
 fresh = do
-    n <- get
-    put $ n+1
+    (n, ms) <- get
+    put (n+1, ms)
     return . TVar . TV $ (varNames !! n)
     where varNames = map ('$':) $ [1..] >>= flip replicateM ['a'..'z']
 
 constrain :: Constraint -> Infer ()
 constrain = tell . (:[])
+
+addMatch :: (Type, [String]) -> Infer ()
+addMatch m = do
+    (n, ms) <- get
+    put (n, m:ms)
 
 constrainIf :: (Maybe Type, Type) -> Infer ()
 constrainIf (a, b) = case a of
@@ -122,6 +128,11 @@ instantiate (Forall vs t) = do
     nvs <- mapM (const fresh) vs'
     let s = Map.fromList (zip vs' nvs)
     return $ apply s t
+
+askEnv :: Infer Env
+askEnv = do
+    (env, _) <- ask
+    return env
 
 -----------------
 -- Unification --
@@ -160,9 +171,24 @@ runSolve :: [Constraint] -> Either TypeError Subst
 runSolve cs = runIdentity $ runExceptT $ solve Map.empty cs
 
 typecheck :: UntypedProgram -> Either TypeError String
-typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls []) (Map.empty, Map.empty) 0 of
+typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls []) (Map.empty, Map.empty) (0, []) of
     Left err -> Left err
-    Right (p, _, cs) -> runSolve cs >>= \s -> return $ show (apply s p)
+    Right ((p, dmap), (_, ms), cs) -> do
+        s <- runSolve cs
+        checkMatches ms dmap s
+        return $ show (apply s p)
+
+exhaustiveCheck :: DMap -> (String, [String]) -> Either TypeError ()
+exhaustiveCheck dmap (tc, bs) = do
+    case Map.lookup tc dmap of
+        Nothing -> Left $ NotDefined tc
+        Just vns -> let bs' = Set.fromList bs ; vns' = Set.fromList vns
+                    in when (bs' /= vns') (Left $ NotExhaustive (Set.toList (vns' `Set.difference` bs')))
+
+checkMatches :: Matches -> DMap -> Subst -> Either TypeError ()
+checkMatches ms dmap s = do
+    let ms' = map (\(t, as) -> let mt = apply s t in let (TCon tc _) = mt in (tc, as)) ms
+    mapM_ (exhaustiveCheck dmap) ms'
 
 --------------------
 -- Operator Types --
@@ -202,8 +228,10 @@ scopedMany :: [String] -> [Scheme] -> Infer a -> Infer a
 scopedMany (x : xs) (sc : scs) m = scoped x sc (scopedMany xs scs m)
 scopedMany _ _ m = m
 
-inferProgram :: UntypedProgram -> [TypedDecl] -> Infer TypedProgram
-inferProgram [] tds = return $ reverse tds
+inferProgram :: UntypedProgram -> [TypedDecl] -> Infer (TypedProgram, DMap)
+inferProgram [] tds = do
+    (_, dmap) <- ask
+    return (reverse tds, dmap)
 inferProgram (d : ds) tds =
     case d of
         DStmt s -> inferStmt s >>= \s' -> inferProgram ds (DStmt s' : tds)
@@ -214,22 +242,22 @@ inferProgram (d : ds) tds =
 createValueConsts :: String -> [Type] -> [(String, [Type])] -> Infer a -> Infer a
 createValueConsts _ _ [] n = n
 createValueConsts tc tps ((vn, vts) : vcs) n = do
-    (env, _) <- ask
+    env <- askEnv
     let vtps = tvs tps
     let vvts = tvs vts
     if (vtps `Set.intersection` vvts) /= vvts
         then throwError $ NotDefinedMany (Set.toList (vvts `Set.difference` vtps))
         else case vts of
-            [] -> let sc = (generalize env $ TCon tc tps) ; scope (e, d) = (Map.insert vn sc (Map.delete vn e), Map.adjust (vn:) tc d)
+            [] -> let sc = (generalize env $ TCon tc tps) ; scope (e, d) = (Map.insert vn sc (Map.delete vn e), Map.insert tc (vn : Map.findWithDefault [] tc d) d)
                   in local scope (createValueConsts tc tps vcs n)
             _ -> do
                     let sc = generalize env $ foldr1 (.) [TFunc t | t <- vts] (TCon tc tps)
-                    let scope (e, d) = (Map.insert vn sc (Map.delete vn e), Map.adjust (vn:) tc d)
+                    let scope (e, d) = (Map.insert vn sc (Map.delete vn e), Map.insert tc (vn : Map.findWithDefault [] tc d) d)
                     local scope (createValueConsts tc tps vcs n)
 
 inferVarDecl :: UntypedDecl -> Infer (TypedDecl, Scheme)
 inferVarDecl (DVar tM id e) = do
-    (env, _) <- ask
+    env <- askEnv
     ((e', t), c) <- listen $ fixPoint id e
     s <- liftEither $ runSolve c 
     let t1 = apply s t
@@ -265,9 +293,9 @@ inferStmt = \case
     SPass e -> throwError GlobalPass
 
 lookupEnv :: String -> Infer Type
-lookupEnv id = ask >>= (\e -> case Map.lookup id e of
+lookupEnv id = askEnv >>= \e -> case Map.lookup id e of
     Nothing -> throwError $ NotDefined id
-    Just t -> instantiate t) . fst
+    Just t -> instantiate t
 
 infer :: UntypedExpr -> Infer (TypedExpr, Type)
 infer = \case
@@ -321,9 +349,10 @@ infer = \case
     EMatch _ e bs -> do
         (e', et) <- infer e
         (bs', bts) <- unzip <$> mapM (inferBranch et) bs
+        let vcs = map ((\(VC c _) -> c) . fst) bs'
         case bts of
             [] -> throwError EmptyMatch
-            (bt : bts') -> (EMatch bt e' bs', bt) <$ sequence_ [constrain (t :~ bt) | t <- bts']
+            (bt : bts') -> (EMatch bt e' bs', bt) <$ sequence_ [constrain (t :~ bt) | t <- bts'] <* addMatch (et, vcs)
     
 inferBranch :: Type -> (Pattern, UntypedExpr) -> Infer ((Pattern, TypedExpr), Type)
 inferBranch mt (p@(VC c vns), e) = do
@@ -338,10 +367,3 @@ inferBranch mt (p@(VC c vns), e) = do
         funcTypes (a `TFunc` b) = funcTypes a ++ funcTypes b
         funcTypes t = [t]
 
-exhaustiveCheck :: String -> [String] -> Infer ()
-exhaustiveCheck tc bs = do
-    (_, dmap) <- ask
-    case Map.lookup tc dmap of
-        Nothing -> throwError $ NotDefined tc
-        Just vns -> let bs' = Set.fromList bs ; vns' = Set.fromList vns
-                    in when (bs' /= vns') (throwError $ NotExhaustive (Set.toList (vns' `Set.difference` bs')))
