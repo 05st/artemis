@@ -57,17 +57,17 @@ angles = Token.angles lexer
 -- Program --
 -------------
 
-program :: Parser Program
+program :: Parser UntypedProgram
 program = whitespace *> many declaration <* whitespace <* eof
 
 ------------------
 -- Declarations --
 ------------------
 
-declaration :: Parser Decl
+declaration :: Parser UntypedDecl
 declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl
 
-varDecl :: Parser Decl
+varDecl :: Parser UntypedDecl
 varDecl = do
     reserved "let"
     var <- identifier
@@ -75,7 +75,7 @@ varDecl = do
     reservedOp "="
     DVar t var <$> expression <* semi
 
-dataDecl :: Parser Decl
+dataDecl :: Parser UntypedDecl
 dataDecl = do
     reserved "data"
     con <- identifier
@@ -94,30 +94,30 @@ dataDecl = do
 -- Statements --
 ----------------
 
-statement :: Parser Stmt
+statement :: Parser UntypedStmt
 statement = (SExpr <$> (expression <* semi)) <|> passStmt
 
-passStmt :: Parser Stmt
+passStmt :: Parser UntypedStmt
 passStmt = SPass <$> (reserved "pass" *> expression <* semi)
 
 -----------------
 -- Expressions --
 -----------------
 
-term :: Parser Expr
+term :: Parser UntypedExpr
 term = block <|> if' <|> match <|> try assign <|> item
 
-block :: Parser Expr
-block = EBlock <$> braces (many declaration)
+block :: Parser UntypedExpr
+block = EBlock () <$> braces (many declaration)
 
-if' :: Parser Expr
+if' :: Parser UntypedExpr
 if' = do
     reserved "if"
     cond <- expression
     reserved "then"
     a <- expression
     reserved "else"
-    EIf cond a <$> expression
+    EIf () cond a <$> expression
 
 pattern :: Parser Pattern
 pattern = do
@@ -125,38 +125,38 @@ pattern = do
     vars <- parens (sepBy1 identifier comma) <|> ([] <$ whitespace)
     return $ VC con vars
 
-match :: Parser Expr
+match :: Parser UntypedExpr
 match = do
     reserved "match"
     expr <- expression
     reserved "with"
     branches <- sepBy1 ((,) <$> pattern <*> (reservedOp "->" *> expression)) comma
-    return $ EMatch expr branches
+    return $ EMatch () expr branches
 
-assign :: Parser Expr
+assign :: Parser UntypedExpr
 assign = do
     ident <- identifier
     reservedOp "="
-    EAssign (EIdent ident) <$> expression
+    EAssign () (EIdent () ident) <$> expression
 
-call :: Parser Expr
+call :: Parser UntypedExpr
 call = do
     fn <- identifier
     args <- parens (sepBy1 expression comma)
-    return $ foldl1 (.) (flip ECall <$> reverse args) (EIdent fn)
+    return $ foldl1 (.) (flip (ECall ()) <$> reverse args) (EIdent () fn)
 
-item :: Parser Expr
+item :: Parser UntypedExpr
 item = try call <|> value <|> parens expression
 
-float :: Parser Expr
+float :: Parser UntypedExpr
 float = do
     whole <- integer
     dot
     frac <- integer
-    return $ EFloat $ read (show whole ++ show frac)
+    return $ EFloat () (read (show whole ++ show frac))
 
-bool :: Parser Expr
-bool = (EBool True <$ reserved "true") <|> (EBool False <$ reserved "false")
+bool :: Parser UntypedExpr
+bool = (EBool () True <$ reserved "true") <|> (EBool () False <$ reserved "false")
 
 parameter :: Parser (String, Maybe Type)
 parameter = do
@@ -164,7 +164,7 @@ parameter = do
     pt <- (Just <$> (colon *> type')) <|> (Nothing <$ whitespace)
     return (ident, pt)
 
-function :: Parser Expr
+function :: Parser UntypedExpr
 function = do
     reserved "fn"
     pts <- parens (sepBy1 parameter comma) <?> "parameter"
@@ -172,49 +172,49 @@ function = do
     reservedOp "=>"
     expr <- expression
     case pts of
-        [(p, t)] -> return $ EFunc t rt p expr
+        [(p, t)] -> return $ EFunc () t rt p expr
         _ -> do
             let (params, types) = unzip pts
             if (Nothing `elem` types) || isNothing rt
-                then return $ foldr1 (.) [EFunc i Nothing p | (p, i) <- init pts] (EFunc (last types) rt (last params) expr)
+                then return $ foldr1 (.) [EFunc () i Nothing p | (p, i) <- init pts] (EFunc () (last types) rt (last params) expr)
                 else let utypes = map fromJust (types ++ [rt])
                      in let funcTypes = [(head dropped, foldr1 TFunc (tail dropped)) | i <- [0 .. length utypes - 2], let dropped = drop i utypes]
-                        in return $ foldr1 (.) [EFunc (Just i) (Just o) p | ((i, o), p) <- init (zip funcTypes params)] (EFunc (Just $ fst (last funcTypes)) (Just $ snd (last funcTypes)) (last params) expr) 
+                        in return $ foldr1 (.) [EFunc () (Just i) (Just o) p | ((i, o), p) <- init (zip funcTypes params)] (EFunc () (Just $ fst (last funcTypes)) (Just $ snd (last funcTypes)) (last params) expr) 
 
-value :: Parser Expr
-value = try function <|> (try float <|> (EInt <$> integer)) <|> bool <|> (EString <$> (char '"' *> many (noneOf "\"") <* char '"')) <|> (EIdent <$> identifier) <|> (EUnit <$ reserved "()")
+value :: Parser UntypedExpr
+value = try function <|> (try float <|> (EInt () <$> integer)) <|> bool <|> (EString () <$> (char '"' *> many (noneOf "\"") <* char '"')) <|> (EIdent () <$> identifier) <|> (EUnit () <$ reserved "()")
 
 ---------------
 -- Operators --
 ---------------
 
-opTable :: OperatorTable String () Identity Expr
+opTable :: OperatorTable String () Identity UntypedExpr
 opTable = [
-        [Prefix (reservedOp "-" >> return (EUnary Neg)),
-         Prefix (reservedOp "!" >> return (EUnary Not))],
+        [Prefix (reservedOp "-" >> return (EUnary () Neg)),
+         Prefix (reservedOp "!" >> return (EUnary () Not))],
 
-        [Infix (reservedOp "^" >> return (EBinary Exp)) AssocRight],
+        [Infix (reservedOp "^" >> return (EBinary () Exp)) AssocRight],
     
-        [Infix (reservedOp "*" >> return (EBinary Mul)) AssocLeft,
-         Infix (reservedOp "/" >> return (EBinary Div)) AssocLeft],
+        [Infix (reservedOp "*" >> return (EBinary () Mul)) AssocLeft,
+         Infix (reservedOp "/" >> return (EBinary () Div)) AssocLeft],
 
-        [Infix (reservedOp "+" >> return (EBinary Add)) AssocLeft,
-         Infix (reservedOp "-" >> return (EBinary Sub)) AssocLeft],
+        [Infix (reservedOp "+" >> return (EBinary () Add)) AssocLeft,
+         Infix (reservedOp "-" >> return (EBinary () Sub)) AssocLeft],
 
-        [Infix (reservedOp ">" >> return (EBinary Greater)) AssocLeft,
-         Infix (reservedOp "<" >> return (EBinary Lesser)) AssocLeft,
-         Infix (reservedOp ">=" >> return (EBinary GreaterEqual)) AssocLeft,
-         Infix (reservedOp "<=" >> return (EBinary LesserEqual)) AssocLeft],
+        [Infix (reservedOp ">" >> return (EBinary () Greater)) AssocLeft,
+         Infix (reservedOp "<" >> return (EBinary () Lesser)) AssocLeft,
+         Infix (reservedOp ">=" >> return (EBinary () GreaterEqual)) AssocLeft,
+         Infix (reservedOp "<=" >> return (EBinary () LesserEqual)) AssocLeft],
 
-        [Infix (reservedOp "==" >> return (EBinary Equal)) AssocLeft,
-         Infix (reservedOp "!=" >> return (EBinary NotEqual)) AssocLeft],
+        [Infix (reservedOp "==" >> return (EBinary () Equal)) AssocLeft,
+         Infix (reservedOp "!=" >> return (EBinary () NotEqual)) AssocLeft],
 
-        [Infix (reservedOp "&&" >> return (EBinary And)) AssocLeft],
+        [Infix (reservedOp "&&" >> return (EBinary () And)) AssocLeft],
 
-        [Infix (reservedOp "||" >> return (EBinary Or)) AssocLeft]
+        [Infix (reservedOp "||" >> return (EBinary () Or)) AssocLeft]
     ]
 
-expression :: Parser Expr
+expression :: Parser UntypedExpr
 expression = buildExpressionParser opTable term
 
 -----------
@@ -250,7 +250,7 @@ baseType = (TBool <$ reserved "bool") <|> (TInt <$ reserved "int") <|> (TFloat <
 -- Run --
 ---------
 
-parse :: String -> Either String Program
+parse :: String -> Either String UntypedProgram
 parse input = case Text.Parsec.parse program "artemis" input of
     Left err -> Left $ show err
     Right decls -> Right decls

@@ -1,5 +1,6 @@
 {-# Language LambdaCase #-}
 {-# Language TypeSynonymInstances #-}
+{-# Language TupleSections #-}
 
 module Infer (typecheck, generalize) where
 
@@ -11,6 +12,7 @@ import Control.Monad.RWS
 
 import Data.List
 import Data.Maybe
+import Data.Functor
 import Data.Functor.Identity
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -126,10 +128,10 @@ solve s c =
 runSolve :: [Constraint] -> Either TypeError Subst
 runSolve cs = runIdentity $ runExceptT $ solve Map.empty cs
 
-typecheck :: Program -> Either TypeError String
-typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls) (Map.empty, Map.empty) 0 of
+typecheck :: UntypedProgram -> Either TypeError String
+typecheck decls = case runIdentity $ runExceptT $ runRWST (inferProgram decls []) (Map.empty, Map.empty) 0 of
     Left err -> Left err
-    Right (_, _, cs) -> Right $ show (runSolve cs) ++ "\n\n" ++ show cs
+    Right (p, _, cs) -> Right $ show (runSolve cs) ++ "\n\n" ++ show cs ++ "\n\n" ++ show p
 
 --------------------
 -- Operator Types --
@@ -169,13 +171,13 @@ scopedMany :: [String] -> [Scheme] -> Infer a -> Infer a
 scopedMany (x : xs) (sc : scs) m = scoped x sc (scopedMany xs scs m)
 scopedMany _ _ m = m
 
-inferProgram :: [Decl] -> Infer ()
-inferProgram [] = return ()
-inferProgram (d : ds) =
+inferProgram :: UntypedProgram -> [TypedDecl] -> Infer TypedProgram
+inferProgram [] tds = return $ reverse tds
+inferProgram (d : ds) tds =
     case d of
-        DStmt s -> inferStmt s *> inferProgram ds
-        DData tc tps vcs -> createValueConsts tc tps vcs (inferProgram ds)
-        DVar _ id _ -> inferVarDecl d >>= \sc -> scoped id sc (inferProgram ds)
+        DStmt s -> inferStmt s >>= \s' -> inferProgram ds (DStmt s' : tds)
+        DData tc tps vcs -> createValueConsts tc tps vcs (inferProgram ds tds)
+        DVar _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferProgram ds (td' : tds))
 
 -----------Constructors
 createValueConsts :: String -> [Type] -> [(String, [Type])] -> Infer a -> Infer a
@@ -194,38 +196,41 @@ createValueConsts tc tps ((vn, vts) : vcs) n = do
                     let scope (e, d) = (Map.insert vn sc (Map.delete vn e), Map.adjust (vn:) tc d)
                     local scope (createValueConsts tc tps vcs n)
 
-inferVarDecl :: Decl -> Infer Scheme
+inferVarDecl :: UntypedDecl -> Infer (TypedDecl, Scheme)
 inferVarDecl (DVar tM id e) = do
     (env, _) <- ask
-    (t, c) <- listen $ fixPoint id e
+    ((e', t), c) <- listen $ fixPoint id e
     s <- liftEither $ runSolve c 
     let t1 = apply s t
         sc = generalize env t1 
-    tv <- flip fromMaybe tM <$> fresh
     constrainIf (tM, t1)
-    return sc
-inferVarDecl _ = undefined -- Not possible
+    return (DVar tM id e', sc)
+inferVarDecl _ = error "Not possible"
 
-fixPoint :: String -> Expr -> Infer Type
+fixPoint :: String -> UntypedExpr -> Infer (TypedExpr, Type)
 fixPoint id e = do
-    let e1 = EFunc Nothing Nothing id e
-    t1 <- infer e1
+    let e1 = EFunc () Nothing Nothing id e
+    (e', t1) <- infer e1
     tv <- fresh
     constrain $ (tv `TFunc` tv) :~ t1
-    return tv
+    return (e', tv)
 
-inferBlock :: [Decl] -> Infer Type
-inferBlock [] = throwError EmptyBlock
-inferBlock (d : ds) =
+inferBlock :: [UntypedDecl] -> [TypedDecl] -> Infer ([TypedDecl], Type)
+inferBlock [] _ = throwError EmptyBlock
+inferBlock (d : ds) tds =
     case d of
-        DStmt (SPass e) -> infer e
-        DStmt s -> inferStmt s *> inferBlock ds
+        DStmt (SPass e) -> do
+            (e', t) <- infer e
+            return (reverse $ DStmt (SPass e') : tds, t)
+        DStmt s -> do
+            s' <- inferStmt s
+            inferBlock ds (DStmt s' : tds)
         DData {} -> throwError BlockData
-        DVar _ id _ -> inferVarDecl d >>= \sc -> scoped id sc (inferBlock ds)
+        DVar _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferBlock ds (td' : tds))
 
-inferStmt :: Stmt -> Infer ()
+inferStmt :: UntypedStmt -> Infer TypedStmt
 inferStmt = \case
-    SExpr e -> void $ infer e
+    SExpr e -> SExpr . fst <$> infer e
     SPass e -> throwError GlobalPass
 
 lookupEnv :: String -> Infer Type
@@ -233,65 +238,69 @@ lookupEnv id = ask >>= (\e -> case Map.lookup id e of
     Nothing -> throwError $ NotDefined id
     Just t -> instantiate t) . fst
 
-infer :: Expr -> Infer Type
+infer :: UntypedExpr -> Infer (TypedExpr, Type)
 infer = \case
-    EBlock decls -> undefined
-    EAssign l r -> do
-        lt <- infer l
-        rt <- infer r
+    EBlock _ decls -> do
+        (tds, t) <- inferBlock decls []
+        return (EBlock t tds, t)
+    EAssign _ l r -> do
+        (l', lt) <- infer l
+        (r', rt) <- infer r
         constrain $ lt :~ rt
-        return lt
-    EIf c a b -> do
-        ct <- infer c
-        at <- infer a
-        bt <- infer b
+        return (EAssign lt l' r', lt)
+    EIf _ c a b -> do
+        (c', ct) <- infer c
+        (a', at) <- infer a
+        (b', bt) <- infer b
         constrain $ ct :~ TBool
         constrain $ at :~ bt
-        return at
-    ECall f a -> do
-        ft <- infer f
-        at <- infer a
-        tv <- fresh
-        constrain $ ft :~ (at `TFunc` tv)
-        return tv
-    EBinary op l r -> do
-        lt <- infer l
-        rt <- infer r
+        return (EIf at c' a' b', at)
+    ECall _ f a -> do
+        (f', ft) <- infer f
+        (a', at) <- infer a
+        rt <- fresh
+        constrain $ ft :~ (at `TFunc` rt)
+        return (ECall rt f' a', rt)
+    EBinary _ op l r -> do
+        (l', lt) <- infer l
+        (r', rt) <- infer r
         tv <- fresh
         let t1 = lt `TFunc` (rt `TFunc` tv)
             t2 = bOpType lt rt op
         constrain $ t1 :~ t2
-        return tv
-    EUnary op a -> do
-        at <- infer a
+        return (EBinary tv op l' r', tv)
+    EUnary _ op a -> do
+        (a', at) <- infer a
         tv <- fresh
         constrain $ (at `TFunc` tv) :~ uOpType at op
-        return tv
-    EIdent id -> lookupEnv id
-    EString _ -> return TString
-    EBool _ -> return TBool
-    EInt _ -> return TInt
-    EFloat _ -> return TFloat
-    EUnit -> return TUnit
-    EFunc pM rM p e -> do
+        return (EUnary tv op a', tv)
+    EIdent _ id -> lookupEnv id <&> \t -> (EIdent t id, t)
+    EString _ s -> return (EString TString s, TString)
+    EBool _ b -> return (EBool TBool b, TBool)
+    EInt _ n -> return (EInt TInt n, TInt)
+    EFloat _ n -> return (EFloat TFloat n, TFloat)
+    EUnit _ -> return (EUnit TUnit, TUnit)
+    EFunc _ pM rM p e -> do
         tv <- fresh
-        t <- scoped p (Forall Set.empty tv) (infer e)
+        (e', t) <- scoped p (Forall Set.empty tv) (infer e)
         constrainIf (pM, tv)
         constrainIf (rM, t)
-        return $ tv `TFunc` t
-    EMatch e bs -> do
-        et <- infer e
-        bts <- mapM (inferBranch et) bs
+        let ft = tv `TFunc` t
+        return (EFunc ft pM rM p e', ft)
+    EMatch _ e bs -> do
+        (e', et) <- infer e
+        (bs', bts) <- unzip <$> mapM (inferBranch et) bs
         case bts of
             [] -> throwError EmptyMatch
-            (bt : bts') -> bt <$ sequence_ [constrain (t :~ bt) | t <- bts']
+            (bt : bts') -> (EMatch bt e' bs', bt) <$ sequence_ [constrain (t :~ bt) | t <- bts']
     
-inferBranch :: Type -> (Pattern, Expr) -> Infer Type
-inferBranch mt (VC c vns, e) = do
+inferBranch :: Type -> (Pattern, UntypedExpr) -> Infer ((Pattern, TypedExpr), Type)
+inferBranch mt (p@(VC c vns), e) = do
     ct <- lookupEnv c
     let (rt, ts) = (\l -> (last l, init l)) . funcTypes . reverseFunc $ ct
     constrain $ rt :~ mt
-    scopedMany vns (Forall Set.empty `map` ts) (infer e)
+    (e', bt) <- scopedMany vns (Forall Set.empty `map` ts) (infer e)
+    return ((p, e'), bt)
     where
         reverseFunc (a `TFunc` b) = reverseFunc a `TFunc` reverseFunc b
         reverseFunc t = t

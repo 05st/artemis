@@ -9,15 +9,17 @@ import Type
 type Program a = [Decl a]
 data Decl a = DStmt (Stmt a) | DVar (Maybe Type) String (Expr a) | DData String [Type] [(String, [Type])] deriving (Show)
 data Stmt a = SExpr (Expr a) | SPass (Expr a) deriving (Show)
-data Expr a = EBlock [Decl a] a | EAssign (Expr a) (Expr a) | EMatch (Expr a) [(Pattern, Expr a)] | EIf (Expr a) (Expr a) (Expr a) | ECall (Expr a) (Expr a)
-             | EBinary BinOp (Expr a) (Expr a) | EUnary UnaOp (Expr a)
-             | EIdent String | EString String | EBool Bool | EInt Integer | EFloat Double | EUnit | EFunc (Maybe Signature) String (Expr a)
+data Expr a = EBlock a [Decl a] | EAssign a (Expr a) (Expr a) | EMatch a (Expr a) [(Pattern, Expr a)] | EIf a (Expr a) (Expr a) (Expr a) | ECall a (Expr a) (Expr a)
+             | EBinary a BinOp (Expr a) (Expr a) | EUnary a UnaOp (Expr a)
+             | EIdent a String | EString a String | EBool a Bool | EInt a Integer | EFloat a Double | EUnit a | EFunc a (Maybe Type) (Maybe Type) String (Expr a)
              deriving (Show)
 
 type UntypedProgram = Program ()
 type TypedProgram = Program Type
 type UntypedDecl = Decl ()
 type TypedDecl = Decl Type
+type UntypedStmt = Stmt ()
+type TypedStmt = Stmt Type
 type UntypedExpr = Expr ()
 type TypedExpr = Expr Type
 
@@ -26,8 +28,6 @@ data UnaOp = Neg | Not deriving (Show)
 
 -- Value Constructor Matching (VC FuncName [Vars])
 data Pattern = VC String [String] deriving (Show)
-
-data Signature = SigFunc Type Type deriving (Show)
 
 {-
 instance Show Decl where
