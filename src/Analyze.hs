@@ -2,7 +2,7 @@
 {-# Language TypeSynonymInstances #-}
 {-# Language TupleSections #-}
 
-module Infer (typecheck, generalize) where
+module Analyze (typecheck) where
 
 
 import Control.Monad.Reader
@@ -24,7 +24,7 @@ import Type
 import Kind
 
 data TypeError = Mismatch Type Type | NotFunction Type | NotDefined String | NotDefinedMany [TVar] | Redefinition String
-               | EmptyBlock | GlobalPass | BlockData | EmptyMatch | NotExhaustive [String]
+               | EmptyBlock | GlobalPass | BlockData | BlockClass | EmptyMatch | NotExhaustive [String]
                | UnifyError [Type] [Type] | InfiniteType TVar Type deriving (Show)
 
 type Env = Map.Map String Scheme
@@ -66,6 +66,7 @@ instance Substitutable a => Substitutable (Decl a) where
         DVar tM id e -> DVar tM id (apply s e)
         DStmt st -> DStmt (apply s st)
         DData {} -> error "attempt to substitute data decl"
+        DClass {} -> error "attempt to substitute class decl"
 
 instance Substitutable a => Substitutable (Stmt a) where
     tvs = error "tvs called on stmt"
@@ -237,6 +238,7 @@ inferProgram (d : ds) tds =
         DStmt s -> inferStmt s >>= \s' -> inferProgram ds (DStmt s' : tds)
         DData tc tps vcs -> createValueConsts tc tps vcs (inferProgram ds tds)
         DVar _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferProgram ds (td' : tds))
+        DClass d fs -> inferProgram ds tds
 
 -----------Constructors
 createValueConsts :: String -> [Type] -> [(String, [Type])] -> Infer a -> Infer a
@@ -285,6 +287,7 @@ inferBlock (d : ds) tds =
             s' <- inferStmt s
             inferBlock ds (DStmt s' : tds)
         DData {} -> throwError BlockData
+        DClass {} -> throwError BlockClass
         DVar _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferBlock ds (td' : tds))
 
 inferStmt :: UntypedStmt -> Infer TypedStmt

@@ -7,7 +7,7 @@ import Data.List (intercalate)
 import Type
 
 type Program a = [Decl a]
-data Decl a = DStmt (Stmt a) | DVar (Maybe Type) String (Expr a) | DData String [Type] [(String, [Type])] deriving (Show)
+data Decl a = DStmt (Stmt a) | DVar (Maybe Type) String (Expr a) | DData String [Type] [(String, [Type])] | DClass (Decl a) [Decl a] deriving (Show)
 data Stmt a = SExpr (Expr a) | SPass (Expr a) deriving (Show)
 data Expr a = EBlock a [Decl a] | EAssign a (Expr a) (Expr a) | EMatch a (Expr a) [(Pattern, Expr a)] | EIf a (Expr a) (Expr a) (Expr a) | ECall a (Expr a) (Expr a)
              | EBinary a BinOp (Expr a) (Expr a) | EUnary a UnaOp (Expr a)

@@ -3,7 +3,7 @@ module Main where
 import System.Environment
 
 import Parser
-import Infer
+import Analyze
 
 main :: IO ()
 main = getArgs >>= readFile . head >>= putStrLn . interpret . parse
@@ -12,4 +12,4 @@ main = getArgs >>= readFile . head >>= putStrLn . interpret . parse
         interpret (Right decls) =
             case typecheck decls of
                 Left err -> "ERROR: " ++ show err
-                Right msg -> "Typecheck Passed\n\n" ++ msg
+                Right msg -> "Typecheck Passed\n\n" ++ msg ++ "\n\n" ++ show decls

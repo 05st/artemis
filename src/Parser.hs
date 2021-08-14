@@ -20,7 +20,7 @@ import Type
 -----------
 
 rKeywords :: [String]
-rKeywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float", "if", "else", "then", "match", "with", "void", "data", "()"]
+rKeywords = ["fn", "true", "false", "let", "pass", "bool", "int", "string", "float", "if", "else", "then", "match", "with", "void", "data", "class", "impl", "where", "()"]
 
 rOperators :: [String]
 rOperators = ["+", "-", "*", "/", "^", "=", "==", "!=", ">", ">=", "<", "<=", "!", "&&", "||", "->", "=>", "|"]
@@ -65,7 +65,7 @@ program = whitespace *> many declaration <* whitespace <* eof
 ------------------
 
 declaration :: Parser UntypedDecl
-declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl
+declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> classDecl
 
 varDecl :: Parser UntypedDecl
 varDecl = do
@@ -89,6 +89,32 @@ dataDecl = do
             con <- identifier
             tvars <- parens (sepBy type' comma) <|> ([] <$ whitespace)
             return (con, tvars)
+
+classDecl :: Parser UntypedDecl
+classDecl = do
+    reserved "class"
+    con <- identifier
+    let cid = con ++ "D"
+    tvars <- angles (sepBy typeVar comma <|> ([] <$ whitespace))
+    reserved "where"
+    (dns, dts) <- unzip <$> sepBy1 ((,) <$> identifier <*> typeAnnotation) comma
+    semi
+    let cdata = DData cid tvars [(cid, dts)]
+    return $ DClass cdata (genFuns cid (length dns) dns)
+    where
+        genFuns _ _ [] = []
+        genFuns cid n (dn : defs) =
+            let matchVars = map show [1..n]
+            in let chosen = matchVars !! (n - length defs - 1)
+            in let f = DVar Nothing dn (EFunc () Nothing Nothing "d" (EMatch () (EIdent () "d") [(VC cid matchVars, EIdent () chosen)]))
+            in f : genFuns cid n defs
+
+implDecl :: Parser UntypedDecl
+implDecl = do
+    reserved "impl"
+    con <- identifier
+    tps <- angles (sepBy type' comma)
+    undefined
 
 ----------------
 -- Statements --
