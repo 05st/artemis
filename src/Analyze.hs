@@ -238,7 +238,7 @@ inferProgram (d : ds) tds =
         DStmt s -> inferStmt s >>= \s' -> inferProgram ds (DStmt s' : tds)
         DData tc tps vcs -> createValueConsts tc tps vcs (inferProgram ds tds)
         DVar _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferProgram ds (td' : tds))
-        DClass d fs -> inferProgram ds tds
+        DClass d fs -> inferProgram (d : fs ++ ds) tds
 
 -----------Constructors
 createValueConsts :: String -> [Type] -> [(String, [Type])] -> Infer a -> Infer a

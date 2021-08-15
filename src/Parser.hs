@@ -65,7 +65,7 @@ program = whitespace *> many declaration <* whitespace <* eof
 ------------------
 
 declaration :: Parser UntypedDecl
-declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> classDecl
+declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> classDecl <|> implDecl
 
 varDecl :: Parser UntypedDecl
 varDecl = do
@@ -94,12 +94,12 @@ classDecl :: Parser UntypedDecl
 classDecl = do
     reserved "class"
     con <- identifier
-    let cid = con ++ "D"
-    tvars <- angles (sepBy typeVar comma <|> ([] <$ whitespace))
+    let cid = '_' : con
+    tvar <- angles typeVar
     reserved "where"
     (dns, dts) <- unzip <$> sepBy1 ((,) <$> identifier <*> typeAnnotation) comma
     semi
-    let cdata = DData cid tvars [(cid, dts)]
+    let cdata = DData cid [tvar] [(cid, dts)]
     return $ DClass cdata (genFuns cid (length dns) dns)
     where
         genFuns _ _ [] = []
@@ -113,8 +113,19 @@ implDecl :: Parser UntypedDecl
 implDecl = do
     reserved "impl"
     con <- identifier
-    tps <- angles (sepBy type' comma)
-    undefined
+    td <- angles type'
+    let (TCon tid _) = td
+    reserved "where"
+    (dns, des) <- unzip <$> sepBy1 def comma
+    semi
+    let call = foldl1 (.) (flip (ECall ()) <$> reverse des) (EIdent () ('_' : con))
+    return $ DVar Nothing ('_' : con ++ tid) call
+    where
+        def = do
+            reserved "let"
+            id <- identifier
+            reservedOp "="
+            (id,) <$> expression
 
 ----------------
 -- Statements --
