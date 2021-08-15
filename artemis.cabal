@@ -25,9 +25,7 @@ source-repository head
 
 library
   exposed-modules:
-      Analyze
       AST
-      Kind
       Parser
       Type
   other-modules:
@@ -39,6 +37,7 @@ library
     , containers
     , mtl
     , parsec
+    , text
   default-language: Haskell2010
 
 executable artemis-exe
@@ -54,6 +53,7 @@ executable artemis-exe
     , containers
     , mtl
     , parsec
+    , text
   default-language: Haskell2010
 
 test-suite artemis-test
@@ -70,4 +70,5 @@ test-suite artemis-test
     , containers
     , mtl
     , parsec
+    , text
   default-language: Haskell2010
