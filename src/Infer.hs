@@ -60,7 +60,7 @@ annotate (Program decls) =
         Left err -> Left err
         Right (p, _, cs) -> do
             s <- runSolve cs
-            return (show s)-- . show $ Program $ fmap (apply s) p
+            return . show $ Program $ fmap (apply s) p
 
 compose :: Subst -> Subst -> Subst
 compose a b = Map.map (apply a) b `Map.union` a
@@ -214,7 +214,6 @@ infer = \case
         return (EIf at c' a' b', at)
     EMatch _ e bs -> do
         (e', et) <- infer e
-        trace (show et) $ return ()
         (bs', bts) <- unzip <$> mapM (inferBranch et) bs
         case bts of
             [] -> throwError EmptyMatch
@@ -255,17 +254,14 @@ infer = \case
         return (ECall rt f' a', rt)
 
 inferPattern :: Pattern -> Infer (Type, [(Ident, Scheme)])
-inferPattern (PVar id) = do
-    t <- fresh
-    return (t, [(id, Forall Set.empty t)])
+inferPattern (PVar id) = fresh <&> \t -> (t, [(id, Forall Set.empty t)])
 inferPattern (PCon con ps) = do
     (pts, vars) <- unzip <$> mapM inferPattern ps
     ft <- lookupEnv con
-    trace ("Elem(a, b) type: " ++ show ft) $ return ()
     t <- fresh
     let ft' = foldr (:->) t pts
     constrain $ ft' :~: ft
-    trace (show t) $ return (t, concat vars)
+    return (t, concat vars)
 
 inferBranch :: Type -> (Pattern, UExpr) -> Infer ((Pattern, TExpr), Type)
 inferBranch mt (p, e) = do
