@@ -71,9 +71,7 @@ unify (TVar v) t = bind v t
 unify t (TVar v) = bind v t
 unify a@(TCon c1 ts1) b@(TCon c2 ts2)
     | c1 /= c2 = throwError $ Mismatch a b
-    | otherwise = unifyMany ts1 ts2 {- do
-        subs <- sequence [unify t1 t2 | (t1, t2) <- zip ts1 ts2]
-        return $ foldr compose Map.empty subs -}
+    | otherwise = unifyMany ts1 ts2
 
 unifyMany :: [Type] -> [Type] -> Solve Subst
 unifyMany [] [] = return Map.empty
