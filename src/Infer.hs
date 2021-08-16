@@ -26,6 +26,15 @@ type Solve a = ExceptT TypeError Identity a
 
 type Subst = Map.Map TVar Type
 
+defTEnv :: TEnv
+defTEnv = Map.fromList
+    [("addInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
+     ("subInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
+     ("mulInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
+     ("divInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
+     ("expInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
+     ("addFloat", Forall Set.empty (TFloat :-> (TFloat :-> TFloat)))]
+
 class Substitutable a where
     tvs :: a -> Set.Set TVar
     apply :: Subst -> a -> a
@@ -56,7 +65,7 @@ instance Substitutable a => Substitutable (Decl a) where
 
 annotate :: UProgram -> Either TypeError String
 annotate (Program decls) =
-    case runIdentity $ runExceptT $ runRWST (annotateProgram decls []) Map.empty 0 of
+    case runIdentity $ runExceptT $ runRWST (annotateProgram decls []) defTEnv 0 of
         Left err -> Left err
         Right (p, _, cs) -> do
             s <- runSolve cs
@@ -92,6 +101,7 @@ solve s c =
         [] -> return s
         ((t1 :~: t2) : cs) -> do
             s1 <- unify t1 t2
+            let nsub = s1 `compose` s
             solve (s1 `compose` s) (apply s1 cs)
 
 runSolve :: [Constraint] -> Either TypeError Subst
@@ -222,12 +232,15 @@ infer = \case
         (r', rt) <- infer r
         t <- fresh
         let t1 = lt :-> (rt :-> t)
+        t2 <- lookupEnv op
+        {-
         t2 <- case op of
             _ | op `elem` ["+", "-", "*", "/", "^"] -> return $ TInt :-> (TInt :-> TInt)
             _ | op `elem` [">", "<", ">=", "<="] -> return $ TInt :-> (TInt :-> TBool)
             _ | op `elem` ["==", "!="] -> return $ lt :-> (rt :-> TBool)
             _ | op `elem` ["||", "&&"] -> return $ TBool :-> (TBool :-> TBool)
             _ -> throwError $ UnknownOperator op
+        -}
         constrain $ t1 :~: t2
         return (EBinary t op l' r', t)
     EUnary _ op a -> do
@@ -267,4 +280,3 @@ inferBranch mt (p, e) = do
     constrain $ pt :~: mt
     (e', et) <- scopedMany vars (infer e)
     return ((p, e'), et)
-    

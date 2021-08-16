@@ -1,5 +1,6 @@
 module Parser (Parser.parse) where
 
+import Data.Functor
 import Data.Functor.Identity
 import qualified Data.Text as Text
 
@@ -16,6 +17,9 @@ import Type
 -- Lexer --
 -----------
 
+defOps :: [String]
+defOps = ["+", "-", "*", "/", "^", "=", "==", "!=", ">", ">=", "<", "<=", "!", "&&", "||"] 
+
 lexer :: Token.GenTokenParser Text.Text () Identity
 lexer = Token.makeTokenParser $ Token.LanguageDef
     { Token.commentStart = "/*"
@@ -27,12 +31,13 @@ lexer = Token.makeTokenParser $ Token.LanguageDef
     , Token.opStart = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Token.opLetter =  oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Token.reservedNames = ["fn", "true", "false", "let", "mut", "pass", "int", "float", "bool", "string", "()", "void", "if", "then", "else", "match", "with", "data"]
-    , Token.reservedOpNames = ["+", "-", "*", "/", "^", "=", "==", "!=", ">", ">=", "<", "<=", "!", "&&", "||", "->", "=>", "|"]
+    , Token.reservedOpNames = defOps ++ ["->", "=>", "|"]
     , Token.caseSensitive = True }
 
 identifier = Token.identifier lexer
 reserved = Token.reserved lexer
 reservedOp = Token.reservedOp lexer
+operator = Token.operator lexer
 parens = Token.parens lexer
 integer = Token.integer lexer
 semi = Token.semi lexer
@@ -63,14 +68,14 @@ varDecl :: Parser UDecl
 varDecl = do
     reserved "let"
     mut <- (True <$ reserved "mut") <|> (False <$ whitespace)
-    id <- identifier
+    id <- identifier <|> parens (operator <|> choice (map (\op -> reservedOp op >> return op) defOps))
     reservedOp "="
     DVar mut id <$> expression <* semi
 
 dataDecl :: Parser UDecl
 dataDecl = do
     reserved "data"
-    con <- identifier
+    con <- dataIdentifier
     tvars <- option [] (angles (sepBy (flip TV Star <$> identifier) comma))
     reservedOp "="
     vcons <- sepBy1 vcon (reservedOp "|")
@@ -78,7 +83,7 @@ dataDecl = do
     return $ DData con tvars vcons
     where
         vcon = do
-            con <- identifier
+            con <- dataIdentifier
             tvars <- option [] (parens (sepBy type' comma))
             return (con, tvars)
 
@@ -105,7 +110,8 @@ opTable =
     [infixOp ">" AssocLeft, infixOp "<" AssocLeft, infixOp ">=" AssocLeft, infixOp "<=" AssocLeft],
     [infixOp "==" AssocLeft, infixOp "!=" AssocLeft],
     [infixOp "&&" AssocLeft],
-    [infixOp "||" AssocLeft]]
+    [infixOp "||" AssocLeft],
+    [Infix (operator <&> EBinary ()) AssocLeft]]
     where 
         prefixOp op = Prefix (reservedOp op >> return (EUnary () op))
         infixOp op = Infix (reservedOp op >> return (EBinary () op))
@@ -163,7 +169,7 @@ float = do
     w <- integer
     dot
     f <- integer
-    return $ EFloat () (read (show w ++ show f))
+    return $ EFloat () (read (show w ++ '.':show f))
 
 bool :: Parser UExpr
 bool = EBool () <$> ((True <$ reserved "true") <|> (False <$ reserved "false"))

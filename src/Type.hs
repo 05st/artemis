@@ -6,7 +6,7 @@ module Type where
 import Data.List
 import Data.Set
 
-data TVar = TV String Kind deriving (Show, Eq, Ord)
+data TVar = TV String Kind deriving (Eq, Ord)
 data Type = TCon String [Type] | TVar TVar deriving (Eq)
 data Scheme = Forall (Set TVar) Type deriving (Show)
 
@@ -24,7 +24,13 @@ pattern a :-> b = TCon "->" [a, b]
 
 instance Show Type where
     show = \case
-        TVar (TV id _) -> id
+        TVar tv -> show tv
         a :-> b -> '(':show a ++ " -> " ++ show b ++ ")"
         TCon c [] -> c
         TCon c ts -> c ++ '<':intercalate ", " (Prelude.map show ts) ++ ">"
+
+instance Show TVar where
+    show (TV s _) = s
+
+instance Show Constraint where
+    show (a :~: b) = show a ++ " ~ " ++ show b
