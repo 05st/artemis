@@ -183,10 +183,7 @@ function = do
     params <- parens (sepBy1 identifier comma) <?> "parameter"
     reservedOp "=>"
     expr <- expression
-    case params of
-        [p] -> return $ EFunc () p expr
-        _ -> let i = init params ; l = last params
-             in return $ foldr1 (.) [EFunc () p | p <- i] (EFunc () l expr)
+    return $ foldr (EFunc ()) (EFunc () (last params) expr) (init params)
 
 value :: Parser UExpr
 value = try function <|> (try float <|> int) <|> bool <|> string' <|> ident <|> unit
@@ -214,9 +211,8 @@ typeVar :: Parser TVar
 typeVar = do
     var <- identifier
     tps <- option [] (angles (sepBy typeVar comma))
-    case tps of
-        [] -> return $ TV var Star
-        _ -> let kind = foldr1 (:*>) (map (const Star) tps) in return $ TV var kind 
+    let kind = foldr ((:*>) . const Star) Star tps
+    return $ TV var kind 
 
 baseType :: Parser Type
 baseType = (TInt <$ reserved "int") <|> (TFloat <$ reserved "float")

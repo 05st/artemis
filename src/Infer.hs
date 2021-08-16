@@ -2,6 +2,8 @@
 
 module Infer (annotate) where
 
+import Debug.Trace
+
 import Control.Monad.Except
 import Control.Monad.RWS
 
@@ -52,13 +54,13 @@ instance Substitutable a => Substitutable (Decl a) where
         DData {} -> error "attempt to substitute data decl"
         other -> fmap (apply s) other
 
-annotate :: UProgram -> Either TypeError TProgram
+annotate :: UProgram -> Either TypeError String
 annotate (Program decls) =
     case runIdentity $ runExceptT $ runRWST (annotateProgram decls []) Map.empty 0 of
         Left err -> Left err
         Right (p, _, cs) -> do
             s <- runSolve cs
-            return . Program $ fmap (apply s) p
+            return (show s)-- . show $ Program $ fmap (apply s) p
 
 compose :: Subst -> Subst -> Subst
 compose a b = Map.map (apply a) b `Map.union` a
@@ -69,9 +71,17 @@ unify (TVar v) t = bind v t
 unify t (TVar v) = bind v t
 unify a@(TCon c1 ts1) b@(TCon c2 ts2)
     | c1 /= c2 = throwError $ Mismatch a b
-    | otherwise = do
+    | otherwise = unifyMany ts1 ts2 {- do
         subs <- sequence [unify t1 t2 | (t1, t2) <- zip ts1 ts2]
-        return $ foldr compose Map.empty subs
+        return $ foldr compose Map.empty subs -}
+
+unifyMany :: [Type] -> [Type] -> Solve Subst
+unifyMany [] [] = return Map.empty
+unifyMany (t1 : ts1) (t2 : ts2) =
+  do su1 <- unify t1 t2
+     su2 <- unifyMany (apply su1 ts1) (apply su1 ts2)
+     return (su2 `compose` su1)
+unifyMany t1 t2 = throwError $ Mismatch (head t1) (head t2)
 
 bind :: TVar -> Type -> Solve Subst
 bind v t
@@ -110,6 +120,10 @@ instantiate (Forall vs t) = do
 scoped :: Ident -> Scheme -> Infer a -> Infer a
 scoped id sc = local (Map.insert id sc . Map.delete id)
 
+scopedMany :: [(Ident, Scheme)] -> Infer a -> Infer a
+scopedMany [] m = m
+scopedMany ((id, sc) : vs) m = scoped id sc (scopedMany vs m)
+
 lookupEnv :: Ident -> Infer Type
 lookupEnv id = ask >>= \e ->
     case Map.lookup id e of 
@@ -128,11 +142,8 @@ valueConstructors tc tps ((vn, vts) : vcs) n = do
     let vvts = tvs vts
     if (vtps `Set.intersection` vvts) /= vvts
         then throwError $ NotDefinedMany (Set.toList (vvts `Set.difference` vtps))
-        else case vts of
-            [] -> let sc = (generalize env $ TCon tc tps')
-                  in local (Map.insert vn sc . Map.delete vn) (valueConstructors tc tps vcs n)
-            _ -> let sc = generalize env $ foldr1 (.) [(:-> t) | t <- vts] (TCon tc tps')
-                 in local (Map.insert vn sc . Map.delete vn) (valueConstructors tc tps vcs n)
+        else let sc = generalize env $ foldr (:->) (TCon tc tps') vts
+             in local (Map.insert vn sc . Map.delete vn) (valueConstructors tc tps vcs n)
 
 annotateProgram :: [UDecl] -> [TDecl] -> Infer [TDecl]
 annotateProgram [] tds = return $ reverse tds
@@ -160,10 +171,13 @@ inferVarDecl _ = error "Not possible"
 fixPoint :: String -> UExpr -> Infer (TExpr, Type)
 fixPoint id e = do
     let e1 = EFunc () id e
-    (e', t1) <- infer e1
-    tv <- fresh
-    constrain $ (tv :-> tv) :~: t1
-    return (e', tv)
+    (e1', t1) <- infer e1
+    case e1' of
+        (EFunc _ _ e') -> do
+            tv <- fresh
+            constrain $ (tv :-> tv) :~: t1
+            return (e', tv)
+        _ -> error "Not possible"
 
 inferBlock :: [UDecl] -> [TDecl] -> Infer ([TDecl], Type)
 inferBlock [] _ = throwError EmptyBlock
@@ -200,9 +214,8 @@ infer = \case
         return (EIf at c' a' b', at)
     EMatch _ e bs -> do
         (e', et) <- infer e
-        let (ps, bes) = unzip bs
-        (bes', bts) <- unzip <$> mapM infer bes
-        let bs' = zip ps bes'
+        trace (show et) $ return ()
+        (bs', bts) <- unzip <$> mapM (inferBranch et) bs
         case bts of
             [] -> throwError EmptyMatch
             (bt : bts') -> (EMatch bt e' bs', bt) <$ sequence_ [constrain $ bt' :~: bt | bt' <- bts']
@@ -240,3 +253,24 @@ infer = \case
         rt <- fresh
         constrain $ ft :~: (at :-> rt)
         return (ECall rt f' a', rt)
+
+inferPattern :: Pattern -> Infer (Type, [(Ident, Scheme)])
+inferPattern (PVar id) = do
+    t <- fresh
+    return (t, [(id, Forall Set.empty t)])
+inferPattern (PCon con ps) = do
+    (pts, vars) <- unzip <$> mapM inferPattern ps
+    ft <- lookupEnv con
+    trace ("Elem(a, b) type: " ++ show ft) $ return ()
+    t <- fresh
+    let ft' = foldr (:->) t pts
+    constrain $ ft' :~: ft
+    trace (show t) $ return (t, concat vars)
+
+inferBranch :: Type -> (Pattern, UExpr) -> Infer ((Pattern, TExpr), Type)
+inferBranch mt (p, e) = do
+    (pt, vars) <- inferPattern p
+    constrain $ pt :~: mt
+    (e', et) <- scopedMany vars (infer e)
+    return ((p, e'), et)
+    

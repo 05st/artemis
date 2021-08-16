@@ -15,4 +15,4 @@ main = do
         Right program ->
             case annotate program of
                 Left err -> print err
-                Right tprogram -> print tprogram
+                Right msg -> putStrLn msg
