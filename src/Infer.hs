@@ -17,11 +17,11 @@ import qualified Data.Set as Set
 import AST
 import Type
 
-data TypeError = Mismatch Type Type | NotDefined Ident | NotDefinedMany [TVar] | UnknownOperator Oper
+data TypeError = Mismatch Type Type | NotDefined Ident | NotDefinedMany [TVar] | UnknownOperator Oper | NotMutable Ident
                | EmptyBlock | EmptyMatch | BlockData | GlobalPass | InfiniteType TVar Type
                deriving (Show)
 
-type TEnv = Map.Map Ident Scheme
+type TEnv = Map.Map Ident (Scheme, Bool)
 type Infer a = RWST TEnv [Constraint] Int (Except TypeError) a
 type Solve a = ExceptT TypeError Identity a
 
@@ -29,14 +29,14 @@ type Subst = Map.Map TVar Type
 
 defTEnv :: TEnv
 defTEnv = Map.fromList
-    [("addInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
-     ("subInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
-     ("mulInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
-     ("divInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
-     ("expInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
-     ("addFloat", Forall Set.empty (TFloat :-> (TFloat :-> TFloat))),
-     ("error", Forall (Set.fromList [TV "a" Star]) (TCon "List" [TChar] :-> TVar (TV "a" Star))),
-     ("bottom", Forall (Set.fromList [TV "a" Star]) (TVar (TV "a" Star)))]
+    [("addInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
+     ("subInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
+     ("mulInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
+     ("divInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
+     ("expInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
+     ("addFloat", (Forall Set.empty (TFloat :-> (TFloat :-> TFloat)), False)),
+     ("error", (Forall (Set.fromList [TV "a" Star]) (TCon "List" [TChar] :-> TVar (TV "a" Star)), False)),
+     ("bottom", (Forall (Set.fromList [TV "a" Star]) (TVar (TV "a" Star)), False))]
 
 class Substitutable a where
     tvs :: a -> Set.Set TVar
@@ -60,13 +60,13 @@ instance Substitutable a => Substitutable [a] where
     tvs l = foldr (Set.union . tvs) Set.empty l
     apply s = map (apply s)
 
-annotate :: UProgram -> Either TypeError String
+annotate :: UProgram -> Either TypeError TProgram
 annotate (Program decls) =
     case runIdentity $ runExceptT $ runRWST (annotateProgram decls []) defTEnv 0 of
         Left err -> Left err
         Right (p, _, cs) -> do
             s <- runSolve cs
-            return . show $ Program $ fmap (fmap (apply s)) p
+            return . Program $ fmap (fmap (apply s)) p
 
 compose :: Subst -> Subst -> Subst
 compose a b = Map.map (apply a) b `Map.union` a
@@ -113,7 +113,7 @@ fresh = do
 
 generalize :: TEnv -> Type -> Scheme
 generalize env t = Forall vs t
-    where vs = tvs t `Set.difference` tvs (Map.elems env)
+    where vs = tvs t `Set.difference` tvs (map fst (Map.elems env))
 
 instantiate :: Scheme -> Infer Type
 instantiate (Forall vs t) = do
@@ -122,18 +122,24 @@ instantiate (Forall vs t) = do
     let s = Map.fromList (zip vs' nvs)
     return $ apply s t
 
-scoped :: Ident -> Scheme -> Infer a -> Infer a
-scoped id sc = local (Map.insert id sc . Map.delete id)
+scoped :: Ident -> (Scheme, Bool) -> Infer a -> Infer a
+scoped id d = local (Map.insert id d . Map.delete id)
 
-scopedMany :: [(Ident, Scheme)] -> Infer a -> Infer a
+scopedMany :: [(Ident, (Scheme, Bool))] -> Infer a -> Infer a
 scopedMany [] m = m
-scopedMany ((id, sc) : vs) m = scoped id sc (scopedMany vs m)
+scopedMany ((id, d) : vs) m = scoped id d (scopedMany vs m)
 
-lookupEnv :: Ident -> Infer Type
+lookupType :: Ident -> Infer Type
+lookupType id = lookupEnv id >>= instantiate . fst
+
+lookupMut :: Ident -> Infer Bool
+lookupMut id = snd <$> lookupEnv id
+
+lookupEnv :: Ident -> Infer (Scheme, Bool)
 lookupEnv id = ask >>= \e ->
-    case Map.lookup id e of 
+    case Map.lookup id e of
         Nothing -> throwError $ NotDefined id
-        Just sc -> instantiate sc
+        Just d -> return d
 
 constrain :: Constraint -> Infer ()
 constrain = tell . (:[])
@@ -148,7 +154,7 @@ valueConstructors tc tps ((vn, vts) : vcs) n = do
     if (vtps `Set.intersection` vvts) /= vvts
         then throwError $ NotDefinedMany (Set.toList (vvts `Set.difference` vtps))
         else let sc = generalize env $ foldr (:->) (TCon tc tps') vts
-             in local (Map.insert vn sc . Map.delete vn) (valueConstructors tc tps vcs n)
+             in local (Map.insert vn (sc, False) . Map.delete vn) (valueConstructors tc tps vcs n)
 
 annotateProgram :: [UDecl] -> [TDecl] -> Infer [TDecl]
 annotateProgram [] tds = return $ reverse tds
@@ -156,7 +162,7 @@ annotateProgram (d : ds) tds =
     case d of
         DStmt s -> annotateStmt s >>= \s' -> annotateProgram ds (DStmt s' : tds)
         DData tc tps vcs -> valueConstructors tc tps vcs (annotateProgram ds (DData tc tps vcs: tds))
-        DVar _ _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (annotateProgram ds (td' : tds))
+        DVar m _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id (sc, m) (annotateProgram ds (td' : tds))
 
 annotateStmt :: UStmt -> Infer TStmt
 annotateStmt = \case
@@ -196,11 +202,11 @@ inferBlock (d : ds) tds =
             s' <- annotateStmt s
             inferBlock ds (DStmt s' : tds)
         DData {} -> throwError BlockData
-        DVar _ _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferBlock ds (td' : tds))
+        DVar m _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id (sc, m) (inferBlock ds (td' : tds))
 
 infer :: UExpr -> Infer (TExpr, Type)
 infer = \case
-    EIdent _ id -> lookupEnv id >>= \t -> return (EIdent t id, t)
+    EIdent _ id -> lookupType id >>= \t -> return (EIdent t id, t)
     EInt _ n -> return (EInt TInt n, TInt)
     EFloat _ n -> return (EFloat TFloat n, TFloat)
     EBool _ b -> return (EBool TBool b, TBool)
@@ -208,7 +214,7 @@ infer = \case
     EUnit _ -> return (EUnit TUnit, TUnit)
     EFunc _ p e -> do
         pt <- fresh
-        (e', rt) <- scoped p (Forall Set.empty pt) (infer e)
+        (e', rt) <- scoped p (Forall Set.empty pt, False) (infer e)
         let t = pt :-> rt
         return (EFunc t p e', t)
     EIf _ c a b -> do
@@ -230,7 +236,7 @@ infer = \case
         (r', rt) <- infer r
         t <- fresh
         let t1 = lt :-> (rt :-> t)
-        t2 <- lookupEnv op
+        t2 <- lookupType op
         {-
         t2 <- case op of
             _ | op `elem` ["+", "-", "*", "/", "^"] -> return $ TInt :-> (TInt :-> TInt)
@@ -244,7 +250,7 @@ infer = \case
     EUnary _ op a -> do
         (a', at) <- infer a
         t <- fresh
-        ot <- lookupEnv op
+        ot <- lookupType op
         {-
         ot <- case op of
             "-" -> return $ TInt :-> TInt
@@ -255,9 +261,11 @@ infer = \case
         return (ECall t (EIdent ot op) a', t) -- (EUnary t op a', t)
     EAssign _ id r -> do
         (r', rt) <- infer r
-        idt <- lookupEnv id
-        constrain $ idt :~: rt
-        return (EAssign idt id r', idt)
+        idt <- lookupType id
+        mut <- lookupMut id
+        if mut
+            then constrain (idt :~: rt) >> return (EAssign idt id r', idt)
+            else throwError $ NotMutable id
     ECall _ f a -> do
         (f', ft) <- infer f
         (a', at) <- infer a
@@ -269,7 +277,7 @@ inferPattern :: Pattern -> Infer (Type, [(Ident, Scheme)])
 inferPattern (PVar id) = fresh <&> \t -> (t, [(id, Forall Set.empty t)])
 inferPattern (PCon con ps) = do
     (pts, vars) <- unzip <$> mapM inferPattern ps
-    ft <- lookupEnv con
+    ft <- lookupType con
     t <- fresh
     let ft' = foldr (:->) t pts
     constrain $ ft' :~: ft
@@ -279,5 +287,5 @@ inferBranch :: Type -> (Pattern, UExpr) -> Infer ((Pattern, TExpr), Type)
 inferBranch mt (p, e) = do
     (pt, vars) <- inferPattern p
     constrain $ pt :~: mt
-    (e', et) <- scopedMany vars (infer e)
+    (e', et) <- scopedMany (map (\(id, sc) -> (id, (sc, False))) vars) (infer e)
     return ((p, e'), et)

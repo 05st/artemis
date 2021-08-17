@@ -5,6 +5,7 @@ import System.Environment
 
 import Parser
 import Infer
+import Interpreter
 
 main :: IO ()
 main = do
@@ -15,4 +16,4 @@ main = do
         Right program ->
             case annotate program of
                 Left err -> print err
-                Right msg -> putStrLn msg
+                Right annotated -> return $ interpret annotated

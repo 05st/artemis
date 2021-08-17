@@ -1,6 +1,6 @@
 {-# Language LambdaCase #-}
 
-module Interpreter where
+module Interpreter (interpret) where
 
 import qualified Data.Map as Map
 
@@ -12,6 +12,15 @@ import Type
 
 type Env = Map.Map Ident Value
 data Value = VInt Integer | VFloat Double | VBool Bool | VChar Char | VUnit | VFunc Ident TExpr Env | VData Ident [Value]
+
+defEnv :: Map.Map Ident Value
+defEnv = Map.empty
+
+interpret :: TProgram -> ()
+interpret (Program ds) = evalState (evalProgram ds) defEnv
+
+evalProgram :: [TDecl] -> State Env ()
+evalProgram = foldr ((>>) . evalDecl) (return ())
 
 evalDecl :: TDecl -> State Env ()
 evalDecl = \case
