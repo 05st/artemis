@@ -17,6 +17,7 @@ data Constraint = Type :~: Type
 pattern TInt = TCon "int" []
 pattern TFloat = TCon "float" []
 pattern TBool = TCon "bool" []
+pattern TChar = TCon "char" []
 pattern TString = TCon "string" []
 pattern TUnit = TCon "()" []
 pattern TVoid = TCon "void" []

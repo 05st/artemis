@@ -206,6 +206,7 @@ infer = \case
     EInt _ n -> return (EInt TInt n, TInt)
     EFloat _ n -> return (EFloat TFloat n, TFloat)
     EBool _ b -> return (EBool TBool b, TBool)
+    EChar _ c -> return (EChar TChar c, TChar)
     EString _ s -> return (EString TString s, TString)
     EUnit _ -> return (EUnit TUnit, TUnit)
     EFunc _ p e -> do

@@ -131,20 +131,16 @@ item :: Parser UExpr
 item = try call <|> value <|> parens expression
 
 int :: Parser UExpr
-int = EInt () <$> integer
+int = EInt () <$> (decimal <|> octal <|> hexadecimal)
 
-float :: Parser UExpr
-float = do
-    w <- integer
-    dot
-    f <- integer
-    return $ EFloat () (read (show w ++ '.':show f))
+float' :: Parser UExpr
+float' = EFloat () <$> float
 
 bool :: Parser UExpr
 bool = EBool () <$> ((True <$ reserved "true") <|> (False <$ reserved "false"))
 
-string' :: Parser UExpr
-string' = EString () <$> (char '"' *> many (noneOf "\"") <* char '"')
+char' :: Parser UExpr
+char' = EChar () <$> charLiteral
 
 ident :: Parser UExpr
 ident = EIdent () <$> identifier
@@ -172,8 +168,13 @@ list = do
         [] -> return $ EIdent () "Empty"
         _ -> return $ foldr (ECall () . ECall () (EIdent () "Elem")) (EIdent () "Empty") items
 
+-- Will be syntax sugar for list of characters
+-- Desugars 
+string' :: Parser UExpr
+string' = EString () <$> stringLiteral
+
 value :: Parser UExpr
-value = try function <|> (try float <|> int) <|> bool <|> string' <|> ident <|> unit <|> list
+value = try function <|> (try float' <|> int) <|> bool <|> char' <|> string' <|> ident <|> unit <|> list
 
 -----------
 -- Types --
