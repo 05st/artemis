@@ -13,7 +13,7 @@ data Decl a = DStmt (Stmt a) | DVar Mutable (Maybe Type) Ident (Expr a) | DData 
 data Stmt a = SExpr (Expr a) | SPass (Expr a) deriving (Show, Functor)
 data Expr a = EIdent a Ident | EInt a Integer | EFloat a Double | EBool a Bool | EChar a Char | EUnit a | EFunc a Ident (Expr a)
             | EIf a (Expr a) (Expr a) (Expr a) | EMatch a (Expr a) [(Pattern, Expr a)] | EBlock a [Decl a]
-            | EBinary a Oper (Expr a) (Expr a) | EUnary a Oper (Expr a) | EAssign a (Expr a) (Expr a) | ECall a (Expr a) (Expr a)
+            | EBinary a Oper (Expr a) (Expr a) | EUnary a Oper (Expr a) | EAssign a Ident (Expr a) | ECall a (Expr a) (Expr a)
             deriving (Show, Functor)
 
 type UProgram = Program ()

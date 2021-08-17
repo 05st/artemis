@@ -120,7 +120,7 @@ assign :: Parser UExpr
 assign = do
     id <- identifier
     reservedOp "="
-    EAssign () (EIdent () id) <$> expression
+    EAssign () id <$> expression
 
 call :: Parser UExpr
 call = do

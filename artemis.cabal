@@ -27,6 +27,7 @@ library
   exposed-modules:
       AST
       Infer
+      Interpreter
       Lexer
       Parser
       Type

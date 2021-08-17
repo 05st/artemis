@@ -155,7 +155,7 @@ annotateProgram [] tds = return $ reverse tds
 annotateProgram (d : ds) tds =
     case d of
         DStmt s -> annotateStmt s >>= \s' -> annotateProgram ds (DStmt s' : tds)
-        DData tc tps vcs -> valueConstructors tc tps vcs (annotateProgram ds tds)
+        DData tc tps vcs -> valueConstructors tc tps vcs (annotateProgram ds (DData tc tps vcs: tds))
         DVar _ _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (annotateProgram ds (td' : tds))
 
 annotateStmt :: UStmt -> Infer TStmt
@@ -240,7 +240,7 @@ infer = \case
             _ -> throwError $ UnknownOperator op
         -}
         constrain $ t1 :~: t2
-        return (EBinary t op l' r', t)
+        return (ECall t (ECall (rt :-> t) (EIdent t2 op) l') r', t)--(EBinary t op l' r', t)
     EUnary _ op a -> do
         (a', at) <- infer a
         t <- fresh
@@ -252,12 +252,12 @@ infer = \case
             _ -> throwError $ UnknownOperator op
         -}
         constrain $ (at :-> t) :~: ot
-        return (EUnary t op a', t)
-    EAssign _ l r -> do
-        (l', lt) <- infer l
+        return (ECall t (EIdent ot op) a', t) -- (EUnary t op a', t)
+    EAssign _ id r -> do
         (r', rt) <- infer r
-        constrain $ lt :~: rt
-        return (EAssign lt l' r', lt)
+        idt <- lookupEnv id
+        constrain $ idt :~: rt
+        return (EAssign idt id r', idt)
     ECall _ f a -> do
         (f', ft) <- infer f
         (a', at) <- infer a
