@@ -156,22 +156,24 @@ function = do
     expr <- expression
     return $ foldr (EFunc ()) (EFunc () (last params) expr) (init params)
 
--- Desugars a list value into calls to Elem() and Empty
+-- Desugars a list of expressions into calls to Elem() and Empty
 -- [e1, e2, e3, e4]
 -- [ECall "Elem" e1, ECall "Elem" e2, ECall "Elem" e3, ECall "Elem" e4]
 -- [ECall (ECall "Elem" e1), ECall (ECall "Elem" e2), ECall (ECall "Elem" e3), ECall (ECall "Elem" e4)]
--- ECall (ECall "Elem" e3) (ECall (ECall "Elem" e4) Empty)
-list :: Parser UExpr
-list = do
-    items <- brackets (sepBy expression comma)
-    case items of
+-- then foldr into a single expression
+desugarList :: [UExpr] -> Parser UExpr
+desugarList exprs = do
+    case exprs of
         [] -> return $ EIdent () "Empty"
-        _ -> return $ foldr (ECall () . ECall () (EIdent () "Elem")) (EIdent () "Empty") items
+        _ -> return $ foldr (ECall () . ECall () (EIdent () "Elem")) (EIdent () "Empty") exprs
 
--- Will be syntax sugar for list of characters
--- Desugars 
+-- Regular list syntax sugar [e1, e2, e3]
+list :: Parser UExpr
+list = brackets (sepBy expression comma) >>= desugarList
+
+-- String syntax sugar "abc!\n" "hello there123"
 string' :: Parser UExpr
-string' = EString () <$> stringLiteral
+string' = stringLiteral >>= desugarList . map (EChar ())
 
 value :: Parser UExpr
 value = try function <|> (try float' <|> int) <|> bool <|> char' <|> string' <|> ident <|> unit <|> list
@@ -204,7 +206,7 @@ typeVar = do
 
 baseType :: Parser Type
 baseType = (TInt <$ reserved "int") <|> (TFloat <$ reserved "float")
-        <|> (TBool <$ reserved "bool") <|> (TString <$ reserved "string")
+        <|> (TBool <$ reserved "bool") <|> (TChar <$ reserved "char")
         <|> try (TUnit <$ reserved "()") <|> (TVoid <$ reserved "void")
         <|> (TVar <$> typeVar) <|> parens type'
 
