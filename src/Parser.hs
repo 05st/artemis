@@ -34,8 +34,9 @@ varDecl = do
     reserved "let"
     mut <- (True <$ reserved "mut") <|> (False <$ whitespace)
     id <- identifier <|> parens (operator <|> choice (map (\op -> reservedOp op >> return op) defOps))
+    typeAnnotation <- option Nothing (Just <$> (colon *> type'))
     reservedOp "="
-    DVar mut id <$> expression <* semi
+    DVar mut typeAnnotation id <$> expression <* semi
 
 dataDecl :: Parser UDecl
 dataDecl = do
@@ -187,7 +188,7 @@ type' = try funcType <|> try conType <|> baseType
 
 funcType :: Parser Type
 funcType = do
-    input <- baseType
+    input <- try conType <|> baseType
     reservedOp "->"
     (input :->) <$> type'
 

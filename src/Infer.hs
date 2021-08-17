@@ -9,6 +9,7 @@ import Control.Monad.RWS
 
 import Data.Functor
 import Data.Functor.Identity
+import Data.Maybe
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -57,19 +58,13 @@ instance Substitutable a => Substitutable [a] where
     tvs l = foldr (Set.union . tvs) Set.empty l
     apply s = map (apply s)
 
-instance Substitutable a => Substitutable (Decl a) where
-    tvs = error "tvs called on decl"
-    apply s = \case
-        DData {} -> error "attempt to substitute data decl"
-        other -> fmap (apply s) other
-
 annotate :: UProgram -> Either TypeError String
 annotate (Program decls) =
     case runIdentity $ runExceptT $ runRWST (annotateProgram decls []) defTEnv 0 of
         Left err -> Left err
         Right (p, _, cs) -> do
             s <- runSolve cs
-            return . show $ Program $ fmap (apply s) p
+            return . show $ Program $ fmap (fmap (apply s)) p
 
 compose :: Subst -> Subst -> Subst
 compose a b = Map.map (apply a) b `Map.union` a
@@ -159,7 +154,7 @@ annotateProgram (d : ds) tds =
     case d of
         DStmt s -> annotateStmt s >>= \s' -> annotateProgram ds (DStmt s' : tds)
         DData tc tps vcs -> valueConstructors tc tps vcs (annotateProgram ds tds)
-        DVar _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (annotateProgram ds (td' : tds))
+        DVar _ _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (annotateProgram ds (td' : tds))
 
 annotateStmt :: UStmt -> Infer TStmt
 annotateStmt = \case
@@ -167,13 +162,14 @@ annotateStmt = \case
     SPass _ -> throwError GlobalPass
 
 inferVarDecl :: UDecl -> Infer (TDecl, Scheme)
-inferVarDecl (DVar m id e) = do
+inferVarDecl (DVar m ta id e) = do
     env <- ask
     ((e', t), c) <- listen $ fixPoint id e
     s <- liftEither $ runSolve c
     let t' = apply s t
         sc = generalize env t'
-    return (DVar m id e', sc)
+    when (isJust ta) (constrain $ fromJust ta :~: t')
+    return (DVar m ta id e', sc)
 inferVarDecl _ = error "Not possible"
 
 fixPoint :: String -> UExpr -> Infer (TExpr, Type)
@@ -198,7 +194,7 @@ inferBlock (d : ds) tds =
             s' <- annotateStmt s
             inferBlock ds (DStmt s' : tds)
         DData {} -> throwError BlockData
-        DVar _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferBlock ds (td' : tds))
+        DVar _ _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id sc (inferBlock ds (td' : tds))
 
 infer :: UExpr -> Infer (TExpr, Type)
 infer = \case

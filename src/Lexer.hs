@@ -1,3 +1,5 @@
+{-# Language OverloadedStrings #-}
+
 module Lexer where
 
 import Data.Functor.Identity

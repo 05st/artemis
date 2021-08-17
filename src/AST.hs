@@ -9,7 +9,7 @@ type Oper = String
 type Mutable = Bool
 
 newtype Program a = Program [Decl a] deriving (Show, Functor)
-data Decl a = DStmt (Stmt a) | DVar Mutable Ident (Expr a) | DData Ident [TVar] [(Ident, [Type])] deriving (Show, Functor)
+data Decl a = DStmt (Stmt a) | DVar Mutable (Maybe Type) Ident (Expr a) | DData Ident [TVar] [(Ident, [Type])] deriving (Show, Functor)
 data Stmt a = SExpr (Expr a) | SPass (Expr a) deriving (Show, Functor)
 data Expr a = EIdent a Ident | EInt a Integer | EFloat a Double | EBool a Bool | EChar a Char | EUnit a | EFunc a Ident (Expr a)
             | EIf a (Expr a) (Expr a) (Expr a) | EMatch a (Expr a) [(Pattern, Expr a)] | EBlock a [Decl a]
