@@ -246,10 +246,13 @@ infer = \case
     EUnary _ op a -> do
         (a', at) <- infer a
         t <- fresh
+        ot <- lookupEnv op
+        {-
         ot <- case op of
             "-" -> return $ TInt :-> TInt
             "!" -> return $ TBool :-> TBool
             _ -> throwError $ UnknownOperator op
+        -}
         constrain $ (at :-> t) :~: ot
         return (EUnary t op a', t)
     EAssign _ l r -> do

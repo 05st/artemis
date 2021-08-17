@@ -10,6 +10,8 @@ import Text.Parsec.Language
 import Text.Parsec.Text (Parser)
 import qualified Text.Parsec.Token as Token
 
+import Debug.Trace
+
 import AST
 import Type
 
@@ -31,7 +33,7 @@ lexer = Token.makeTokenParser $ Token.LanguageDef
     , Token.opStart = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Token.opLetter =  oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Token.reservedNames = ["fn", "true", "false", "let", "mut", "pass", "int", "float", "bool", "string", "()", "void", "if", "then", "else", "match", "with", "data"]
-    , Token.reservedOpNames = defOps ++ ["->", "=>", "|"]
+    , Token.reservedOpNames = defOps ++ ["->", "=>", "|", "?"]
     , Token.caseSensitive = True }
 
 identifier = Token.identifier lexer
@@ -47,6 +49,7 @@ braces = Token.braces lexer
 comma = Token.comma lexer
 dot = Token.dot lexer
 angles = Token.angles lexer
+brackets = Token.brackets lexer
 
 dataIdentifier = (:) <$> upper <*> identifier
 
@@ -104,20 +107,24 @@ passStmt = SPass <$> (reserved "pass" *> expression <* semi)
 opTable :: OperatorTable Text.Text () Identity UExpr
 opTable = 
     [[prefixOp "-", prefixOp "!"],
+    -- [postfixOp "?"],
     [infixOp "^" AssocRight],
     [infixOp "*" AssocLeft, infixOp "/" AssocLeft],
     [infixOp "+" AssocLeft, infixOp "-" AssocLeft],
     [infixOp ">" AssocLeft, infixOp "<" AssocLeft, infixOp ">=" AssocLeft, infixOp "<=" AssocLeft],
     [infixOp "==" AssocLeft, infixOp "!=" AssocLeft],
     [infixOp "&&" AssocLeft],
-    [infixOp "||" AssocLeft],
-    [Infix (operator <&> EBinary ()) AssocLeft]]
+    [infixOp "||" AssocLeft]]
     where 
         prefixOp op = Prefix (reservedOp op >> return (EUnary () op))
         infixOp op = Infix (reservedOp op >> return (EBinary () op))
+        postfixOp op = Postfix (reservedOp op >> return (EUnary () op))
+
+userPrefix = Prefix (operator <&> EUnary ())
+userInfix = Infix (operator <&> EBinary ()) AssocLeft
 
 expression :: Parser UExpr
-expression = buildExpressionParser opTable term
+expression = buildExpressionParser (opTable ++ [[userPrefix], [userInfix]]) term
 
 term :: Parser UExpr
 term = block <|> if' <|> match <|> try assign <|> item
@@ -191,8 +198,20 @@ function = do
     expr <- expression
     return $ foldr (EFunc ()) (EFunc () (last params) expr) (init params)
 
+-- Desugars a list value into calls to Elem() and Empty
+-- [e1, e2, e3, e4]
+-- [ECall "Elem" e1, ECall "Elem" e2, ECall "Elem" e3, ECall "Elem" e4]
+-- [ECall (ECall "Elem" e1), ECall (ECall "Elem" e2), ECall (ECall "Elem" e3), ECall (ECall "Elem" e4)]
+-- ECall (ECall "Elem" e3) (ECall (ECall "Elem" e4) Empty)
+list :: Parser UExpr
+list = do
+    items <- brackets (sepBy expression comma)
+    case items of
+        [] -> return $ EIdent () "Empty"
+        _ -> return $ foldr (ECall () . ECall () (EIdent () "Elem")) (EIdent () "Empty") items
+
 value :: Parser UExpr
-value = try function <|> (try float <|> int) <|> bool <|> string' <|> ident <|> unit
+value = try function <|> (try float <|> int) <|> bool <|> string' <|> ident <|> unit <|> list
 
 -----------
 -- Types --
@@ -234,4 +253,4 @@ parse :: Text.Text -> String -> Either String UProgram
 parse input filename =
     case Text.Parsec.parse program filename input of
         Left err -> Left $ show err
-        Right decls -> Right decls
+        Right decls -> {- trace (show decls) $ -} Right decls
