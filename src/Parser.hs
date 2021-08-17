@@ -177,7 +177,7 @@ string' :: Parser UExpr
 string' = stringLiteral >>= desugarList . map (EChar ())
 
 value :: Parser UExpr
-value = try function <|> (try float' <|> int) <|> bool <|> char' <|> string' <|> ident <|> unit <|> list
+value = try function <|> (try float' <|> try int) <|> bool <|> char' <|> string' <|> ident <|> unit <|> list
 
 -----------
 -- Types --

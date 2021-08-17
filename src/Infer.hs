@@ -34,7 +34,9 @@ defTEnv = Map.fromList
      ("mulInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
      ("divInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
      ("expInt", Forall Set.empty (TInt :-> (TInt :-> TInt))),
-     ("addFloat", Forall Set.empty (TFloat :-> (TFloat :-> TFloat)))]
+     ("addFloat", Forall Set.empty (TFloat :-> (TFloat :-> TFloat))),
+     ("error", Forall (Set.fromList [TV "a" Star]) (TCon "List" [TChar] :-> TVar (TV "a" Star))),
+     ("bottom", Forall (Set.fromList [TV "a" Star]) (TVar (TV "a" Star)))]
 
 class Substitutable a where
     tvs :: a -> Set.Set TVar
