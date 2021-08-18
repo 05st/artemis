@@ -47,5 +47,5 @@ let (++) : List<a> -> List<a> -> List<a> = fn(l1, l2) =>
 let println : List<char> -> () = fn(s) =>
     print(s ++ "\n");
 
-print("this should run before input")
+print("this should run before input");
 input(());

@@ -7,6 +7,8 @@ import qualified Data.Map as Map
 import Control.Monad.State
 import Data.Functor
 
+import System.IO
+
 import Debug.Trace
 
 import AST
@@ -39,7 +41,7 @@ pMulFloat _ = error "Not possible"
 pDivFloat [VFloat a, VFloat b] = return $ VFloat (a / b)
 pDivFloat _ = error "Not possible"
 
-pPrint [a] = putStr (toString a) >> return VUnit
+pPrint [a] = putStr (toString a) >> hFlush stdout >> return VUnit
 pPrint _ = error "Not possible"
 
 pError [a] = error $ "ERROR: " ++ toString a
