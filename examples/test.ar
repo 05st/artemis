@@ -44,5 +44,8 @@ let (++) : List<a> -> List<a> -> List<a> = fn(l1, l2) =>
         Elem(a, l1') -> Elem(a, l1' ++ l2),
         Empty -> l2;
 
-let println = fn(s) => print(s ++ "\n");
-println("epic");
+let println : List<char> -> () = fn(s) =>
+    print(s ++ "\n");
+
+print("this should run before input")
+input(());

@@ -29,11 +29,20 @@ type Subst = Map.Map TVar Type
 
 defTEnv :: TEnv
 defTEnv = Map.fromList
-    [("addInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
-     ("addFloat", (Forall Set.empty (TFloat :-> (TFloat :-> TFloat)), False)),
-     ("error", (Forall (Set.fromList [TV "a" Star]) (TCon "List" [TChar] :-> TVar (TV "a" Star)), False)),
-     ("bottom", (Forall (Set.fromList [TV "a" Star]) (TVar (TV "a" Star)), False)),
-     ("print", (Forall Set.empty (TCon "List" [TChar] :-> TUnit), False))]
+    [addBuiltIn "addInt" [] (TInt :-> (TInt :-> TInt)),
+    addBuiltIn "subInt" [] (TInt :-> (TInt :-> TInt)),
+    addBuiltIn "mulInt" [] (TInt :-> (TInt :-> TInt)),
+    addBuiltIn "divInt" [] (TInt :-> (TInt :-> TInt)),
+    addBuiltIn "addFloat" [] (TFloat :-> (TFloat :-> TFloat)),
+    addBuiltIn "subFloat" [] (TFloat :-> (TFloat :-> TFloat)),
+    addBuiltIn "mulFloat" [] (TFloat :-> (TFloat :-> TFloat)),
+    addBuiltIn "divFloat" [] (TFloat :-> (TFloat :-> TFloat)),
+    addBuiltIn "print" [] (TCon "List" [TChar] :-> TUnit),
+    addBuiltIn "error" [TV "a" Star] (TCon "List" [TChar] :-> TVar (TV "a" Star)),
+    addBuiltIn "input" [] (TUnit :-> TCon "List" [TChar])]
+
+addBuiltIn :: Ident -> [TVar] -> Type -> (Ident, (Scheme, Bool))
+addBuiltIn n pts t = (n, (Forall (Set.fromList pts) t, False))
 
 class Substitutable a where
     tvs :: a -> Set.Set TVar
