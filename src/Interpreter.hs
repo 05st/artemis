@@ -26,8 +26,8 @@ evalDecl :: TDecl -> StateT Env IO ()
 evalDecl = \case
     DStmt s -> evalStmt s
     DVar _ _ id v -> do
-        e <- get
         v' <- evalExpr v
+        e <- get
         put (Map.insert id v' e)
     DData tc tps cs -> do
         mapM_ valueConstructor cs
@@ -54,8 +54,9 @@ evalExpr = \case
     EUnit _ -> return VUnit
     EIdent _ id -> do
         env <- get
-        let Just v = Map.lookup id env
-        return v
+        case Map.lookup id env of
+            Just v -> return v
+            Nothing -> error $ "Undefined " ++ id ++ " \n\n " ++ show env
     EFunc _ p e -> get <&> VFunc . UserDef p e
     EIf _ c a b -> do
         c' <- evalExpr c
@@ -80,10 +81,9 @@ evalExpr = \case
         case vf of
             UserDef p e c -> do
                 orig <- get
-                let nenv = Map.insert p a' orig
-                put nenv
+                put (Map.insert p a' orig)
                 -- val <- evalExpr e
-                --put orig
+                -- put orig
                 -- return val
                 evalExpr e
             BuiltIn n args f -> do

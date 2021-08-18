@@ -12,10 +12,9 @@ let map : (a -> b) -> List<a> -> List<b> = fn(f, list) =>
             Elem(f(a), map(f, list')),
         Empty -> Empty;
 
-let fold : (a -> b -> b) -> List<a> -> b -> b = fn(f, list, a) =>
+let fold : (a -> b -> b) -> b -> List<a> -> b = fn(f, a, list) =>
     match list with
-        Elem(a', list') ->
-            f(a', fold(f, list', a)),
+        Elem(a', list') -> f(a', fold(f, a, list')),
         Empty -> a;
 
 let safeHead : List<a> -> Maybe<a> = fn(l) =>
@@ -47,5 +46,6 @@ let (++) : List<a> -> List<a> -> List<a> = fn(l1, l2) =>
 let println : List<char> -> () = fn(s) =>
     print(s ++ "\n");
 
-let (+) = addInt;
-println(showInt(1+1));
+let sumInts = fold(addInt, 0);
+
+print(showInt(sumInts([1, 2, 3, 4, 5]))); 
