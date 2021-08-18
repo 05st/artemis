@@ -30,10 +30,6 @@ type Subst = Map.Map TVar Type
 defTEnv :: TEnv
 defTEnv = Map.fromList
     [("addInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
-     ("subInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
-     ("mulInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
-     ("divInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
-     ("expInt", (Forall Set.empty (TInt :-> (TInt :-> TInt)), False)),
      ("addFloat", (Forall Set.empty (TFloat :-> (TFloat :-> TFloat)), False)),
      ("error", (Forall (Set.fromList [TV "a" Star]) (TCon "List" [TChar] :-> TVar (TV "a" Star)), False)),
      ("bottom", (Forall (Set.fromList [TV "a" Star]) (TVar (TV "a" Star)), False)),
@@ -173,24 +169,15 @@ annotateStmt = \case
 inferVarDecl :: UDecl -> Infer (TDecl, Scheme)
 inferVarDecl (DVar m ta id e) = do
     env <- ask
-    ((e', t), c) <- listen $ fixPoint id e
+    recurType <- fresh
+    ((e', t), c) <- listen $ scoped id (Forall Set.empty recurType, False) (infer e)
     s <- liftEither $ runSolve c
     let t' = apply s t
         sc = generalize env t'
     when (isJust ta) (constrain $ fromJust ta :~: t')
+    constrain $ recurType :~: t'
     return (DVar m ta id e', sc)
 inferVarDecl _ = error "Not possible"
-
-fixPoint :: String -> UExpr -> Infer (TExpr, Type)
-fixPoint id e = do
-    let e1 = EFunc () id e
-    (e1', t1) <- infer e1
-    case e1' of
-        (EFunc _ _ e') -> do
-            tv <- fresh
-            constrain $ (tv :-> tv) :~: t1
-            return (e', tv)
-        _ -> error "Not possible"
 
 inferBlock :: [UDecl] -> [TDecl] -> Infer ([TDecl], Type)
 inferBlock [] _ = throwError EmptyBlock

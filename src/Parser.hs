@@ -36,7 +36,9 @@ varDecl = do
     id <- identifier <|> parens (operator <|> choice (map (\op -> reservedOp op >> return op) defOps))
     typeAnnotation <- option Nothing (Just <$> (colon *> type'))
     reservedOp "="
-    DVar mut typeAnnotation id <$> expression <* semi
+    expr <- expression
+    semi
+    return $ DVar mut typeAnnotation id expr
 
 dataDecl :: Parser UDecl
 dataDecl = do
@@ -98,10 +100,15 @@ block = EBlock () <$> braces (many declaration)
 if' :: Parser UExpr
 if' = do
     reserved "if"
+    whitespace
     cond <- expression
+    whitespace
     reserved "then"
+    whitespace
     a <- expression
+    whitespace
     reserved "else"
+    whitespace
     EIf () cond a <$> expression
 
 match :: Parser UExpr

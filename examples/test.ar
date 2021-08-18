@@ -2,30 +2,6 @@
 */
 data Maybe<a> = Some(a) | None;
 
-let bindMaybe : Maybe<a> -> (a -> Maybe<b>) -> Maybe<b> = fn(m, f) =>
-    match m with
-        Some(a) -> f(a),
-        None -> None;
-
-let (?>>=) = bindMaybe;
-let (?>=>) : (a -> Maybe<b>) -> (b -> Maybe<c>) -> a -> Maybe<c>
-    = fn(f, g, x) => f(x) ?>>= g;
-
-/* Either Data Type
-*/
-data Either<a, b> = Left(a) | Right(b);
-
-let bindEither : Either<a, b> -> (b -> Either<c, d>) -> Either<c, d>
-    = fn(m, f) =>
-        match m with
-            Left(l) -> Left(l),
-            Right(r) -> f(r);
-
-let leftToMaybe : Either<a, b> -> Maybe<a> = fn(e) =>
-    match e with
-        Left(l) -> Some(l),
-        Right(r_) -> None;
-
 /* List Data Type
 */ 
 data List<a> = Elem(a, List<a>) | Empty;
@@ -42,11 +18,6 @@ let fold : (a -> b -> b) -> List<a> -> b -> b = fn(f, list, a) =>
             f(a', fold(f, list', a)),
         Empty -> a;
 
-let (++) : List<a> -> List<a> -> List<a> = fn(l1, l2) =>
-    match l1 with
-        Elem(a, l1') -> Elem(a, l1' ++ l2),
-        Empty -> l2;
-
 let safeHead : List<a> -> Maybe<a> = fn(l) =>
     match l with
         Elem(a, l_) -> Some(a),
@@ -60,7 +31,7 @@ let head : List<a> -> a = fn(l) =>
 let tail : List<a> -> List<a> = fn(l) =>
     match l with
         Elem(a_, l) -> l,
-        Empty -> error ("tail: empty list");
+        Empty -> error("tail: empty list");
 
 let last : List<a> -> a = fn(l) =>
     match l with
@@ -68,5 +39,10 @@ let last : List<a> -> a = fn(l) =>
         Elem(a_, l') -> last(l'),
         Empty -> error("last: empty list");
 
-let test = Elem(last("epic"), Empty);
-print(test);
+let (++) : List<a> -> List<a> -> List<a> = fn(l1, l2) =>
+    match l1 with
+        Elem(a, l1') -> Elem(a, l1' ++ l2),
+        Empty -> l2;
+
+let println = fn(s) => print(s ++ "\n");
+println("epic");

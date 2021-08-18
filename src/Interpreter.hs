@@ -17,22 +17,26 @@ data VFunc = UserDef Ident TExpr Env | BuiltIn Int [Value] ([Value] -> IO Value)
 data Value = VInt Integer | VFloat Double | VBool Bool | VChar Char | VUnit | VFunc VFunc | VData Ident [Value] deriving (Show)
 
 instance Show VFunc where
-    show _ = "func"
+    show (UserDef id e _) = id ++ " |fn|"
+    show (BuiltIn n _ _) = show n ++ " |bi|"
 
-pAddInt :: [Value] -> IO Value
+-- Built-in functions
 pAddInt [VInt a, VInt b] = return $ VInt (a + b)
-
-pAddFloat :: [Value] -> IO Value
 pAddFloat [VFloat a, VFloat b] = return $ VFloat (a + b)
+pPrint [a] = putStr (buildString a) >> return VUnit
+pError [a] = error $ "ERROR: " ++ buildString a
 
-pPrint :: [Value] -> IO Value
-pPrint [a@(VData "Elem" [VChar c, n])] = putStr (buildString a) >> return VUnit
-    where buildString (VData "Elem" [VChar c, n]) = c : buildString n
-          buildString (VData "Empty" []) = []
-pPrint other = print other >> return VUnit
+-- Helper function
+-- Turns a List<char> into a Haskell [Char]
+buildString (VData "Elem" [VChar c, n]) = c : buildString n
+buildString (VData "Empty" []) = []
 
 defEnv :: Map.Map Ident Value
-defEnv = Map.fromList [("addInt", VFunc (BuiltIn 2 [] pAddInt)), ("addFloat", VFunc (BuiltIn 2 [] pAddFloat)), ("print", VFunc (BuiltIn 1 [] pPrint))]
+defEnv = Map.fromList [
+    ("addInt", VFunc (BuiltIn 2 [] pAddInt)),
+    ("addFloat", VFunc (BuiltIn 2 [] pAddFloat)),
+    ("print", VFunc (BuiltIn 1 [] pPrint)),
+    ("error", VFunc (BuiltIn 1 [] pError))]
 
 interpret :: TProgram -> IO ()
 interpret (Program ds) = evalStateT (evalProgram ds) defEnv
@@ -81,7 +85,11 @@ evalExpr = \case
         a' <- evalExpr a
         b' <- evalExpr b
         if cv then return a' else return b'
-    EMatch _ e bs -> return $ VInt 0 -- TODO
+    EMatch _ e bs -> do
+        e' <- evalExpr e
+        let (p, be) = head $ dropWhile (\(p, _) -> not $ checkPattern e' p) bs
+        setPatternVars e' p
+        evalExpr be
     EBlock _ ds -> do
         orig <- get
         v <- evalBlock ds
@@ -94,11 +102,12 @@ evalExpr = \case
         case vf of
             UserDef p e c -> do
                 orig <- get
-                let nenv = Map.insert p a' c
+                let nenv = Map.insert p a' orig
                 put nenv
-                val <- evalExpr e
-                put orig
-                return val
+                -- val <- evalExpr e
+                --put orig
+                -- return val
+                evalExpr e
             BuiltIn n args f -> do
                 let args' = args ++ [a']
                 if length args' == n
@@ -115,3 +124,14 @@ evalBlock :: [TDecl] -> StateT Env IO Value
 evalBlock ((DStmt (SPass e)) : ds) = evalExpr e
 evalBlock (d : ds) = evalDecl d >> evalBlock ds
 evalBlock [] = error "No pass in block"
+
+checkPattern :: Value -> Pattern -> Bool
+checkPattern (VData dcon []) (PCon con []) = con == dcon
+checkPattern (VData dcon vs) (PCon con ps) = (con == dcon) && or [checkPattern v p | (v, p) <- zip vs ps]
+checkPattern _ (PVar _) = True
+checkPattern _ _ = False
+
+setPatternVars :: Value -> Pattern -> StateT Env IO ()
+setPatternVars val (PVar var) = get >>= put . Map.insert var val
+setPatternVars (VData dcon vs) (PCon con ps) = sequence_ [setPatternVars v p | (v, p) <- zip vs ps]
+setPatternVars _ _ = return ()
