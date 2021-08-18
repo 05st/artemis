@@ -67,3 +67,6 @@ let last : List<a> -> a = fn(l) =>
         Elem(a, Empty) -> a,
         Elem(a_, l') -> last(l'),
         Empty -> error("last: empty list");
+
+let test = Elem(last("epic"), Empty);
+print(test);

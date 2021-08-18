@@ -16,4 +16,4 @@ main = do
         Right program ->
             case annotate program of
                 Left err -> print err
-                Right annotated -> return $ interpret annotated
+                Right annotated -> interpret annotated
