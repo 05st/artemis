@@ -7,11 +7,12 @@ At the moment, Artemis has all of these implemented:
 - Type inference (Hindley-Milner)
 - Algebraic data types
 - Pattern patching
-- Built-in functions/types
-- Recursive functions/types
+- User-defined prefix/infix operators
 - Implementations for common data types (`List<a>`, `Maybe<a>`, `Either<a, b>`)
 - Non-significant whitespace
 - Automatic currying/partial application
+- Built-in functions/types
+- Recursive functions/types
 
 ## Planned
 It would be great to have these implemented eventually:
