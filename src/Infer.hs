@@ -16,33 +16,16 @@ import qualified Data.Set as Set
 
 import AST
 import Type
+import BuiltIn
 
-data TypeError = Mismatch Type Type | NotDefined Ident | NotDefinedMany [TVar] | UnknownOperator Oper | NotMutable Ident
+data TypeError = Mismatch Type Type | NotDefined String | NotDefinedMany [TVar] | UnknownOperator Oper | NotMutable String
                | EmptyBlock | EmptyMatch | BlockData | GlobalPass | InfiniteType TVar Type
                deriving (Show)
 
-type TEnv = Map.Map Ident (Scheme, Bool)
 type Infer a = RWST TEnv [Constraint] Int (Except TypeError) a
 type Solve a = ExceptT TypeError Identity a
 
 type Subst = Map.Map TVar Type
-
-defTEnv :: TEnv
-defTEnv = Map.fromList
-    [addBuiltIn "addInt" [] (TInt :-> (TInt :-> TInt)),
-    addBuiltIn "subInt" [] (TInt :-> (TInt :-> TInt)),
-    addBuiltIn "mulInt" [] (TInt :-> (TInt :-> TInt)),
-    addBuiltIn "divInt" [] (TInt :-> (TInt :-> TInt)),
-    addBuiltIn "addFloat" [] (TFloat :-> (TFloat :-> TFloat)),
-    addBuiltIn "subFloat" [] (TFloat :-> (TFloat :-> TFloat)),
-    addBuiltIn "mulFloat" [] (TFloat :-> (TFloat :-> TFloat)),
-    addBuiltIn "divFloat" [] (TFloat :-> (TFloat :-> TFloat)),
-    addBuiltIn "print" [] (TCon "List" [TChar] :-> TUnit),
-    addBuiltIn "error" [TV "a" Star] (TCon "List" [TChar] :-> TVar (TV "a" Star)),
-    addBuiltIn "input" [] (TUnit :-> TCon "List" [TChar])]
-
-addBuiltIn :: Ident -> [TVar] -> Type -> (Ident, (Scheme, Bool))
-addBuiltIn n pts t = (n, (Forall (Set.fromList pts) t, False))
 
 class Substitutable a where
     tvs :: a -> Set.Set TVar
@@ -128,20 +111,20 @@ instantiate (Forall vs t) = do
     let s = Map.fromList (zip vs' nvs)
     return $ apply s t
 
-scoped :: Ident -> (Scheme, Bool) -> Infer a -> Infer a
+scoped :: String -> (Scheme, Bool) -> Infer a -> Infer a
 scoped id d = local (Map.insert id d . Map.delete id)
 
-scopedMany :: [(Ident, (Scheme, Bool))] -> Infer a -> Infer a
+scopedMany :: [(String, (Scheme, Bool))] -> Infer a -> Infer a
 scopedMany [] m = m
 scopedMany ((id, d) : vs) m = scoped id d (scopedMany vs m)
 
-lookupType :: Ident -> Infer Type
+lookupType :: String -> Infer Type
 lookupType id = lookupEnv id >>= instantiate . fst
 
-lookupMut :: Ident -> Infer Bool
+lookupMut :: String -> Infer Bool
 lookupMut id = snd <$> lookupEnv id
 
-lookupEnv :: Ident -> Infer (Scheme, Bool)
+lookupEnv :: String -> Infer (Scheme, Bool)
 lookupEnv id = ask >>= \e ->
     case Map.lookup id e of
         Nothing -> throwError $ NotDefined id
@@ -270,7 +253,7 @@ infer = \case
         constrain $ ft :~: (at :-> rt)
         return (ECall rt f' a', rt)
 
-inferPattern :: Pattern -> Infer (Type, [(Ident, Scheme)])
+inferPattern :: Pattern -> Infer (Type, [(String, Scheme)])
 inferPattern (PVar id) = fresh <&> \t -> (t, [(id, Forall Set.empty t)])
 inferPattern (PCon con ps) = do
     (pts, vars) <- unzip <$> mapM inferPattern ps

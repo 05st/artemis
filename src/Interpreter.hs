@@ -13,63 +13,8 @@ import Debug.Trace
 
 import AST
 import Type
-
-type Env = Map.Map Ident Value
-data VFunc = UserDef Ident TExpr Env | BuiltIn Int [Value] ([Value] -> IO Value)
-data Value = VInt Integer | VFloat Double | VBool Bool | VChar Char | VUnit | VFunc VFunc | VData Ident [Value] deriving (Show)
-
-instance Show VFunc where
-    show (UserDef id e _) = id ++ " |fn|"
-    show (BuiltIn n _ _) = show n ++ " |bi|"
-
--- Built-in functions
-pAddInt [VInt a, VInt b] = return $ VInt (a + b)
-pAddInt _ = error "Not possible"
-pSubInt [VInt a, VInt b] = return $ VInt (a - b)
-pSubInt _ = error "Not possible"
-pMulInt [VInt a, VInt b] = return $ VInt (a * b)
-pMulInt _ = error "Not possible"
-pDivInt [VInt a, VInt b] = return $ VInt (a `div` b)
-pDivInt _ = error "Not possible"
-
-pAddFloat [VFloat a, VFloat b] = return $ VFloat (a + b)
-pAddFloat _ = error "Not possible"
-pSubFloat [VFloat a, VFloat b] = return $ VFloat (a - b)
-pSubFloat _ = error "Not possible"
-pMulFloat [VFloat a, VFloat b] = return $ VFloat (a * b)
-pMulFloat _ = error "Not possible"
-pDivFloat [VFloat a, VFloat b] = return $ VFloat (a / b)
-pDivFloat _ = error "Not possible"
-
-pPrint [a] = putStr (toString a) >> hFlush stdout >> return VUnit
-pPrint _ = error "Not possible"
-
-pError [a] = error $ "ERROR: " ++ toString a
-pError _ = error "Not possible"
-
-pInput [a] = getLine <&> fromString
-pInput _ = error "Not possible"
-
--- Helper function
--- Turns a List<char> into a Haskell [Char]
-toString :: Value -> String
-toString (VData "Elem" [VChar c, n]) = c : toString n
-toString (VData "Empty" []) = []
-toString _ = error "Not possible"
-
-fromString :: String -> Value
-fromString (c : cs) = VData "Elem" [VChar c, fromString cs]
-fromString [] = VData "Empty" []
-
-addBuiltIn :: Ident -> ([Value] -> IO Value) -> Int -> (Ident, Value)
-addBuiltIn name fn arity = (name, VFunc (BuiltIn arity [] fn))
-
-defEnv :: Map.Map Ident Value
-defEnv = Map.fromList
-    [addBuiltIn "addInt" pAddInt 2, addBuiltIn "subInt" pSubInt 2, addBuiltIn "mulInt" pMulInt 2, addBuiltIn "divInt" pDivInt 2,
-    addBuiltIn "addFloat" pAddFloat 2, addBuiltIn "subFloat" pSubFloat 2, addBuiltIn "mulFloat" pMulFloat 2, addBuiltIn "divFloat" pDivFloat 2,
-    addBuiltIn "print" pPrint 1, addBuiltIn "error" pError 1,
-    addBuiltIn "input" pInput 1]
+import Value
+import BuiltIn
 
 interpret :: TProgram -> IO ()
 interpret (Program ds) = evalStateT (evalProgram ds) defEnv
@@ -87,7 +32,7 @@ evalDecl = \case
     DData tc tps cs -> do
         mapM_ valueConstructor cs
 
-valueConstructor :: (Ident, [Type]) -> StateT Env IO ()
+valueConstructor :: (String, [Type]) -> StateT Env IO ()
 valueConstructor (vc, vts) = do
     env <- get
     let arity = length vts

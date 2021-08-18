@@ -5,6 +5,9 @@ module Type where
 
 import Data.List
 import Data.Set
+import qualified Data.Map as Map
+
+type TEnv = Map.Map String (Scheme, Bool)
 
 data TVar = TV String Kind deriving (Eq, Ord)
 data Type = TCon String [Type] | TVar TVar deriving (Eq)
@@ -21,6 +24,7 @@ pattern TChar = TCon "char" []
 pattern TUnit = TCon "()" []
 pattern TVoid = TCon "void" []
 pattern a :-> b = TCon "->" [a, b]
+pattern TList a = TCon "List" [a]
 
 instance Show Type where
     show = \case

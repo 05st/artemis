@@ -26,11 +26,13 @@ source-repository head
 library
   exposed-modules:
       AST
+      BuiltIn
       Infer
       Interpreter
       Lexer
       Parser
       Type
+      Value
   other-modules:
       Paths_artemis
   hs-source-dirs:
