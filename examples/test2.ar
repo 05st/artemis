@@ -1,5 +1,7 @@
-data List<a> = Elem(a, List<a>) | Empty;
+let factorial
+    = fn(n)
+    => if eqInt(n, 1)
+        then 1
+        else mulInt(n, factorial(subInt(n,1)));
 
-addInt(2, 2);
-print("epic");
-
+print(showInt(factorial(1000)));

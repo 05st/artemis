@@ -10,7 +10,7 @@ import Type
 import Value
 
 
--- Built-in functions
+-- Built-in functions, type checker guarantees that these patterns are matched
 addInt [VInt a, VInt b] = return $ VInt (a + b)
 subInt [VInt a, VInt b] = return $ VInt (a - b)
 mulInt [VInt a, VInt b] = return $ VInt (a * b)
@@ -20,6 +20,8 @@ addFloat [VFloat a, VFloat b] = return $ VFloat (a + b)
 subFloat [VFloat a, VFloat b] = return $ VFloat (a - b)
 mulFloat [VFloat a, VFloat b] = return $ VFloat (a * b)
 divFloat [VFloat a, VFloat b] = return $ VFloat (a / b)
+
+eqInt [VInt a, VInt b] = return $ VBool (a == b)
 
 showInt [VInt a] = return $ fromString (show a)
 showFloat [VFloat a] = return $ fromString (show a)
@@ -49,14 +51,16 @@ builtIn name fn arity vs t = (name, VFunc (BuiltIn arity [] fn), Forall (Set.fro
 builtIns :: [(String, Value, Scheme, Bool)]
 builtIns = [
         builtIn "addInt" addInt 2 [] (TInt :-> (TInt :-> TInt)),
-        builtIn "subInt" addInt 2 [] (TInt :-> (TInt :-> TInt)),
-        builtIn "mulInt" addInt 2 [] (TInt :-> (TInt :-> TInt)),
-        builtIn "divInt" addInt 2 [] (TInt :-> (TInt :-> TInt)),
+        builtIn "subInt" subInt 2 [] (TInt :-> (TInt :-> TInt)),
+        builtIn "mulInt" mulInt 2 [] (TInt :-> (TInt :-> TInt)),
+        builtIn "divInt" divInt 2 [] (TInt :-> (TInt :-> TInt)),
 
-        builtIn "addFloat" addInt 2 [] (TFloat :-> (TFloat :-> TFloat)),
-        builtIn "subFloat" addInt 2 [] (TFloat :-> (TFloat :-> TFloat)),
-        builtIn "mulFloat" addInt 2 [] (TFloat :-> (TFloat :-> TFloat)),
-        builtIn "divFloat" addInt 2 [] (TFloat :-> (TFloat :-> TFloat)),
+        builtIn "addFloat" addFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
+        builtIn "subFloat" subFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
+        builtIn "mulFloat" mulFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
+        builtIn "divFloat" divFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
+
+        builtIn "eqInt" eqInt 2 [] (TInt :-> (TInt :-> TBool)),
 
         builtIn "showInt" showInt 1 [] (TInt :-> TList TChar),
         builtIn "showFloat" showFloat 1 [] (TFloat :-> TList TChar),

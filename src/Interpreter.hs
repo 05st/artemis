@@ -26,11 +26,12 @@ evalDecl :: TDecl -> StateT Env IO ()
 evalDecl = \case
     DStmt s -> evalStmt s
     DVar _ _ id v -> do
-        v' <- evalExpr v
         e <- get
-        put (Map.insert id v' e)
-    DData tc tps cs -> do
-        mapM_ valueConstructor cs
+        v' <- evalExpr v
+        case v' of
+            VFunc (UserDef Nothing p b c) -> put (Map.insert id (VFunc (UserDef (Just id) p b c)) e)
+            _ -> put (Map.insert id v' e)
+    DData tc tps cs -> mapM_ valueConstructor cs
 
 valueConstructor :: (String, [Type]) -> StateT Env IO ()
 valueConstructor (vc, vts) = do
@@ -56,14 +57,12 @@ evalExpr = \case
         env <- get
         case Map.lookup id env of
             Just v -> return v
-            Nothing -> error $ "Undefined " ++ id ++ " \n\n " ++ show env
-    EFunc _ p e -> get <&> VFunc . UserDef p e
+            Nothing -> error $ "Undefined " ++ id ++ "\n\n" ++ show env
+    EFunc _ p e -> get <&> VFunc . UserDef Nothing p e
     EIf _ c a b -> do
         c' <- evalExpr c
         let VBool cv = c'
-        a' <- evalExpr a
-        b' <- evalExpr b
-        if cv then return a' else return b'
+        if cv then evalExpr a else evalExpr b
     EMatch _ e bs -> do
         e' <- evalExpr e
         let (p, be) = head $ dropWhile (\(p, _) -> not $ checkPattern e' p) bs
@@ -79,13 +78,14 @@ evalExpr = \case
         a' <- evalExpr a
         let VFunc vf = f'
         case vf of
-            UserDef p e c -> do
+            UserDef n p e c -> do
                 orig <- get
-                put (Map.insert p a' orig)
-                -- val <- evalExpr e
-                -- put orig
-                -- return val
-                evalExpr e
+                case n of
+                    Just id -> put (Map.insert p a' (Map.insert id f' c))
+                    Nothing -> put (Map.insert p a' c)
+                val <- evalExpr e
+                put orig
+                return val
             BuiltIn n args f -> do
                 let args' = args ++ [a']
                 if length args' == n
