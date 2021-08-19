@@ -6,7 +6,7 @@ Artemis is a statically typed, functional programming language with some inspira
 At the moment, Artemis has all of these implemented:
 - Type inference (Hindley-Milner)
 - Algebraic data types
-- Pattern patching
+- Pattern matching
 - User-defined prefix/infix operators
 - Implementations for common data types (`List<a>`, `Maybe<a>`, `Either<a, b>`)
 - Non-significant whitespace
