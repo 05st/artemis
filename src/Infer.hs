@@ -1,4 +1,5 @@
 {-# Language LambdaCase #-}
+{-# Language TupleSections #-}
 
 module Infer (annotate) where
 
@@ -184,14 +185,18 @@ inferBlock (d : ds) tds =
         DData {} -> throwError BlockData
         DVar m _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id (sc, m) (inferBlock ds (td' : tds))
 
+inferLit :: Lit -> Infer (Lit, Type)
+inferLit = \case
+    LInt n -> return (LInt n, TInt)
+    LFloat n -> return (LFloat n, TFloat)
+    LBool b -> return (LBool b, TBool)
+    LChar c -> return (LChar c, TChar)
+    LUnit -> return (LUnit, TUnit)
+
 infer :: UExpr -> Infer (TExpr, Type)
 infer = \case
     EIdent _ id -> lookupType id >>= \t -> return (EIdent t id, t)
-    EInt _ n -> return (EInt TInt n, TInt)
-    EFloat _ n -> return (EFloat TFloat n, TFloat)
-    EBool _ b -> return (EBool TBool b, TBool)
-    EChar _ c -> return (EChar TChar c, TChar)
-    EUnit _ -> return (EUnit TUnit, TUnit)
+    ELit _ l -> inferLit l >>= \(l', t) -> return (ELit t l', t)
     EFunc _ p e -> do
         pt <- fresh
         (e', rt) <- scoped p (Forall Set.empty pt, False) (infer e)
@@ -254,6 +259,7 @@ infer = \case
         return (ECall rt f' a', rt)
 
 inferPattern :: Pattern -> Infer (Type, [(String, Scheme)])
+inferPattern (PLit l) = inferLit l >>= \(_, t) -> return (t, [])
 inferPattern (PVar id) = fresh <&> \t -> (t, [(id, Forall Set.empty t)])
 inferPattern (PCon con ps) = do
     (pts, vars) <- unzip <$> mapM inferPattern ps

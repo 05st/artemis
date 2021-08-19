@@ -16,13 +16,15 @@ import Type
 import Value
 import BuiltIn
 
+type Interpret = StateT Env IO
+
 interpret :: TProgram -> IO ()
 interpret (Program ds) = evalStateT (evalProgram ds) defEnv
 
 evalProgram :: [TDecl] -> StateT Env IO ()
 evalProgram = foldr ((>>) . evalDecl) (return ())
 
-evalDecl :: TDecl -> StateT Env IO ()
+evalDecl :: TDecl -> Interpret ()
 evalDecl = \case
     DStmt s -> evalStmt s
     DVar _ _ id v -> do
@@ -33,7 +35,7 @@ evalDecl = \case
             _ -> put (Map.insert id v' e)
     DData tc tps cs -> mapM_ valueConstructor cs
 
-valueConstructor :: (String, [Type]) -> StateT Env IO ()
+valueConstructor :: (String, [Type]) -> Interpret ()
 valueConstructor (vc, vts) = do
     env <- get
     let arity = length vts
@@ -41,18 +43,22 @@ valueConstructor (vc, vts) = do
         [] -> put (Map.insert vc (VData vc []) env)
         _ -> put (Map.insert vc (VFunc (BuiltIn arity [] (return . VData vc))) env)
 
-evalStmt :: TStmt -> StateT Env IO ()
+evalStmt :: TStmt -> Interpret ()
 evalStmt = \case
     SExpr e -> void (evalExpr e)
     SPass _ -> error "Not possible"
 
-evalExpr :: TExpr -> StateT Env IO Value
+evalLit :: Lit -> Value
+evalLit = \case
+    LInt n -> VInt n
+    LFloat n -> VFloat n
+    LBool b -> VBool b
+    LChar c -> VChar c
+    LUnit -> VUnit
+
+evalExpr :: TExpr -> Interpret Value
 evalExpr = \case
-    EInt _ n -> return $ VInt n
-    EFloat _ n -> return $ VFloat n
-    EBool _ b -> return $ VBool b
-    EChar _ c -> return $ VChar c
-    EUnit _ -> return VUnit
+    ELit _ l -> return $ evalLit l
     EIdent _ id -> do
         env <- get
         case Map.lookup id env of
@@ -98,7 +104,7 @@ evalExpr = \case
         return v'
     _ -> error "Not possible"
 
-evalBlock :: [TDecl] -> StateT Env IO Value
+evalBlock :: [TDecl] -> Interpret Value
 evalBlock ((DStmt (SPass e)) : ds) = evalExpr e
 evalBlock (d : ds) = evalDecl d >> evalBlock ds
 evalBlock [] = error "No pass in block"
@@ -107,9 +113,10 @@ checkPattern :: Value -> Pattern -> Bool
 checkPattern (VData dcon []) (PCon con []) = con == dcon
 checkPattern (VData dcon vs) (PCon con ps) = (con == dcon) && or [checkPattern v p | (v, p) <- zip vs ps]
 checkPattern _ (PVar _) = True
+checkPattern v (PLit l) = v == evalLit l
 checkPattern _ _ = False
 
-setPatternVars :: Value -> Pattern -> StateT Env IO ()
+setPatternVars :: Value -> Pattern -> Interpret ()
 setPatternVars val (PVar var) = get >>= put . Map.insert var val
 setPatternVars (VData dcon vs) (PCon con ps) = sequence_ [setPatternVars v p | (v, p) <- zip vs ps]
 setPatternVars _ _ = return ()

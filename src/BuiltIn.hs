@@ -16,6 +16,7 @@ addInt [VInt a, VInt b] = return $ VInt (a + b)
 subInt [VInt a, VInt b] = return $ VInt (a - b)
 mulInt [VInt a, VInt b] = return $ VInt (a * b)
 divInt [VInt a, VInt b] = return $ VInt (a `div` b)
+floor' [VFloat a] = return $ VInt (floor a)
 
 addFloat [VFloat a, VFloat b] = return $ VFloat (a + b)
 subFloat [VFloat a, VFloat b] = return $ VFloat (a - b)
@@ -33,6 +34,7 @@ showChar' [VChar a] = return $ fromString (show a)
 showUnit [VUnit] = return $ fromString "()"
 
 readInt [a] = return $ VInt (read $ toString a)
+readFloat [a] = return $ VFloat (read $ toString a)
 
 print' [a] = putStr (toString a) >> hFlush stdout >> return VUnit
 error' [a] = Prelude.error $ "ERROR: " ++ toString a
@@ -61,6 +63,7 @@ builtIns = [
         builtIn "subInt" subInt 2 [] (TInt :-> (TInt :-> TInt)),
         builtIn "mulInt" mulInt 2 [] (TInt :-> (TInt :-> TInt)),
         builtIn "divInt" divInt 2 [] (TInt :-> (TInt :-> TInt)),
+        builtIn "floor" floor' 1 [] (TFloat :-> TInt),
 
         builtIn "addFloat" addFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
         builtIn "subFloat" subFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
@@ -77,6 +80,7 @@ builtIns = [
         builtIn "showUnit" showUnit 1 [] (TUnit :-> TList TChar),
 
         builtIn "readInt" readInt 1 [] (TList TChar :-> TInt),
+        builtIn "readFloat" readFloat 1 [] (TList TChar :-> TFloat),
 
         builtIn "print" print' 1 [] (TList TChar :-> TUnit),
         builtIn "error" error' 1 [TV "a" Star] (TList TChar :-> TVar (TV "a" Star)),

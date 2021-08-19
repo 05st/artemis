@@ -119,9 +119,10 @@ match = do
     branches <- sepBy1 ((,) <$> pattern <*> (reservedOp "->" *> expression)) comma
     return $ EMatch () expr branches
     where
-        pattern = try conPattern <|> varPattern
+        pattern = try conPattern <|> litPattern <|> varPattern
         conPattern = PCon <$> dataIdentifier <*> option [] (parens (sepBy1 pattern comma))
         varPattern = PVar <$> identifier
+        litPattern = PLit <$> (int <|> float' <|> bool <|> char' <|> unit)
 
 assign :: Parser UExpr
 assign = do
@@ -138,23 +139,23 @@ call = do
 item :: Parser UExpr
 item = try call <|> value <|> parens expression
 
-int :: Parser UExpr
-int = EInt () <$> (decimal <|> octal <|> hexadecimal)
+int :: Parser Lit
+int = LInt <$> (decimal <|> try octal <|> try hexadecimal)
 
-float' :: Parser UExpr
-float' = EFloat () <$> float
+float' :: Parser Lit
+float' = LFloat <$> float
 
-bool :: Parser UExpr
-bool = EBool () <$> ((True <$ reserved "true") <|> (False <$ reserved "false"))
+bool :: Parser Lit
+bool = LBool <$> ((True <$ reserved "true") <|> (False <$ reserved "false"))
 
-char' :: Parser UExpr
-char' = EChar () <$> charLiteral
+char' :: Parser Lit
+char' = LChar <$> charLiteral
 
 ident :: Parser UExpr
 ident = EIdent () <$> identifier
 
-unit :: Parser UExpr
-unit = EUnit () <$ reserved "()"
+unit :: Parser Lit
+unit = LUnit <$ reserved "()"
 
 function :: Parser UExpr
 function = do
@@ -181,10 +182,13 @@ list = brackets (sepBy expression comma) >>= desugarList
 
 -- String syntax sugar "abc!\n" "hello there123"
 string' :: Parser UExpr
-string' = stringLiteral >>= desugarList . map (EChar ())
+string' = stringLiteral >>= desugarList . map (ELit () . LChar)
 
 value :: Parser UExpr
-value = try function <|> (try float' <|> try int) <|> bool <|> char' <|> string' <|> ident <|> unit <|> list
+value = try function <|> try (ELit () <$> lit) <|> string' <|> ident <|> list
+
+lit :: Parser Lit
+lit = (try float' <|> try int) <|> bool <|> char' <|> unit
 
 -----------
 -- Types --

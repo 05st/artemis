@@ -13,9 +13,10 @@ let println : List<char> -> ()
 
 let ask : List<char> -> List<char>
     = fn(q)
-    => { print(q)
-       ; pass input(())
-       ;};
+    => {
+        print(q);
+        pass input(());
+    };
 
 data Nat = Zero | Succ(Nat);
 

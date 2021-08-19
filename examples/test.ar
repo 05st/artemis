@@ -48,4 +48,4 @@ let last : List<a> -> a = fn(l) =>
 let println : List<char> -> () = fn(s) =>
     print(s ++ "\n");
 
-println(fold(concat, Empty, ["abc", "urmom"]));
+println(fold(concat, Empty, ["abc", "def", "ghi"]));
