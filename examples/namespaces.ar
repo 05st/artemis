@@ -1,14 +1,7 @@
+import hello::there;
+
 namespace pre {
-    namespace def {
-        let test = "abc";
-    }
     namespace next {
-        import pre::def;
-        let anotherTest = def::test;
+        let anotherTest = thing::def::test;
     }
 }
-
-namespace otherFile {
-    let stuff = 123;
-}
-

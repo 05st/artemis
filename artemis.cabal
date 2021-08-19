@@ -27,6 +27,7 @@ library
   exposed-modules:
       AST
       BuiltIn
+      Importer
       Infer
       Interpreter
       Lexer

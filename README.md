@@ -43,3 +43,6 @@ More can be found [here](https://github.com/05st/artemis/tree/master/examples).
 
 ## Contributing
 Feel free to open a pull request!
+
+## Credits
+[brightly-salty](https://github.com/brightly-salty)

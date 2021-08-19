@@ -14,15 +14,20 @@ import Type
 -- i.e, turns something like ABC.Def in the namespace "XYZ"
 -- to XYZ.ABC.Def
 
-type Resolve = Reader [String]
+type Resolve = Reader Namespace
 
 resolve :: UProgram -> UProgram
-resolve (Program decls) = Program $ runReader (mapM resolveDecl decls) []
+resolve (Program decls) = Program $ runReader (mapM resolveDecl decls) Global
 
 fixName :: QualifiedName -> Resolve QualifiedName
 fixName (Qualified ns name) = do
     namespace <- ask
-    return $ Qualified (namespace ++ ns) name
+    return $ Qualified (namespace `combine` ns) name
+
+combine :: Namespace -> Namespace -> Namespace
+combine ns (Relative Global n) = Relative ns n
+combine ns (Relative ns' n) = Relative (combine ns ns') n
+combine ns Global = ns
 
 resolveConstructor :: (QualifiedName, [Type]) -> Resolve (QualifiedName, [Type])
 resolveConstructor (name, ts) = (,ts) <$> fixName name
@@ -30,13 +35,12 @@ resolveConstructor (name, ts) = (,ts) <$> fixName name
 resolveDecl :: UDecl -> Resolve UDecl
 resolveDecl = \case
     DVar m t name e -> DVar m t <$> fixName name <*> resolveExpr e
-    DNamespace n ds -> DNamespace n <$> local (++ [n]) (mapM resolveDecl ds)
+    DNamespace n ds i -> flip (DNamespace n) i <$> local (`Relative` n) (mapM resolveDecl ds)
     DData con tvs vcs -> do
         con' <- fixName con
         vcs' <- mapM resolveConstructor vcs
         return $ DData con' tvs vcs'
     DStmt s -> DStmt <$> resolveStmt s
-    a@(DImport _) -> return a
 
 resolveStmt :: UStmt -> Resolve UStmt
 resolveStmt = \case

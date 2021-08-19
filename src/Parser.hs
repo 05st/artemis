@@ -21,14 +21,16 @@ import Name
 -------------
 
 module' :: String -> Parser UDecl
-module' file = DNamespace file <$> (whitespace *> many declaration <* whitespace <* eof)
+module' file = do
+    (is, ds) <- whitespace *> ((,) <$> imports <*> many declaration) <* whitespace <* eof
+    return $ DNamespace file ds is
 
 ------------------
 -- Declarations --
 ------------------
 
 declaration :: Parser UDecl
-declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> namespaceDecl <|> importDecl
+declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> namespaceDecl
 
 varDecl :: Parser UDecl
 varDecl = do
@@ -39,12 +41,12 @@ varDecl = do
     reservedOp "="
     expr <- expression
     semi
-    return $ DVar mut typeAnnotation (Qualified [] id) expr
+    return $ DVar mut typeAnnotation (Qualified Global id) expr
 
 dataDecl :: Parser UDecl
 dataDecl = do
     reserved "data"
-    con <- Qualified [] <$> dataIdentifier
+    con <- Qualified Global <$> dataIdentifier
     tvars <- option [] (angles (sepBy (flip TV Star <$> identifier) comma))
     reservedOp "="
     vcons <- sepBy1 vcon (reservedOp "|")
@@ -52,7 +54,7 @@ dataDecl = do
     return $ DData con tvars vcons
     where
         vcon = do
-            con <- Qualified [] <$> dataIdentifier
+            con <- Qualified Global <$> dataIdentifier
             tvars <- option [] (parens (sepBy type' comma))
             return (con, tvars)
 
@@ -60,11 +62,11 @@ namespaceDecl :: Parser UDecl
 namespaceDecl = do
     reserved "namespace"
     id <- identifier
-    decls <- braces (many declaration)
-    return $ DNamespace id decls
+    (is, ds) <- braces ((,) <$> imports <*> many declaration)
+    return $ DNamespace id ds is
 
-importDecl :: Parser UDecl
-importDecl = reserved "import" *> (DImport <$> qualified) <* semi
+imports :: Parser [Namespace]
+imports = many (reserved "import" *> namespace <* semi)
 
 ----------------
 -- Statements --
@@ -131,7 +133,7 @@ match = do
     return $ EMatch () expr branches
     where
         pattern = try conPattern <|> litPattern <|> varPattern
-        conPattern = PCon <$> (Qualified [] <$> dataIdentifier) <*> option [] (parens (sepBy1 pattern comma))
+        conPattern = PCon <$> (Qualified Global <$> dataIdentifier) <*> option [] (parens (sepBy1 pattern comma))
         varPattern = PVar <$> identifier
         litPattern = PLit <$> (int <|> float' <|> bool <|> char' <|> unit)
 
@@ -139,7 +141,7 @@ assign :: Parser UExpr
 assign = do
     id <- identifier
     reservedOp "="
-    EAssign () (Qualified [] id) <$> expression
+    EAssign () (Qualified Global id) <$> expression
 
 call :: Parser UExpr
 call = do
@@ -184,8 +186,8 @@ function = do
 desugarList :: [UExpr] -> Parser UExpr
 desugarList exprs = do
     case exprs of
-        [] -> return $ EIdent () (Qualified [] "Empty")
-        _ -> return $ foldr (ECall () . ECall () (EIdent () (Qualified [] "Elem"))) (EIdent () (Qualified [] "Empty")) exprs
+        [] -> return $ EIdent () (Qualified Global "Empty")
+        _ -> return $ foldr (ECall () . ECall () (EIdent () (Qualified Global "Elem"))) (EIdent () (Qualified Global "Empty")) exprs
 
 -- Regular list syntax sugar [e1, e2, e3]
 list :: Parser UExpr
@@ -237,7 +239,13 @@ baseType = (TInt <$ reserved "int") <|> (TFloat <$ reserved "float")
 qualified :: Parser QualifiedName
 qualified = do
     ids <- sepBy1 identifier (reservedOp "::")
-    return $ Qualified (init ids) (last ids)
+    let ns = foldr (flip Relative) Global (reverse . init $ ids)
+    return $ Qualified ns (last ids)
+
+namespace :: Parser Namespace
+namespace = do
+    ids <- sepBy1 identifier (reservedOp "::")
+    return $ foldr (flip Relative) Global (reverse ids)
 
 ---------
 -- Run --
