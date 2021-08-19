@@ -36,6 +36,7 @@ resolveDecl = \case
         vcs' <- mapM resolveConstructor vcs
         return $ DData con' tvs vcs'
     DStmt s -> DStmt <$> resolveStmt s
+    a@(DImport _) -> return a
 
 resolveStmt :: UStmt -> Resolve UStmt
 resolveStmt = \case

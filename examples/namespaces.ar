@@ -1,5 +1,14 @@
 namespace pre {
+    namespace def {
+        let test = "abc";
+    }
     namespace next {
+        import pre::def;
         let anotherTest = def::test;
     }
 }
+
+namespace otherFile {
+    let stuff = 123;
+}
+

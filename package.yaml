@@ -26,6 +26,7 @@ dependencies:
 - containers
 - text
 - time
+- filepath
 
 library:
   source-dirs: src

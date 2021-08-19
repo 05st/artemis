@@ -9,7 +9,8 @@ type Oper = String
 type Mutable = Bool
 
 newtype Program a = Program [Decl a] deriving (Show, Functor)
-data Decl a = DStmt (Stmt a) | DNamespace String [Decl a] 
+data Decl a = DStmt (Stmt a)
+            | DNamespace String [Decl a] | DImport QualifiedName
             | DVar Mutable (Maybe Type) QualifiedName (Expr a)
             | DData QualifiedName [TVar] [(QualifiedName, [Type])] deriving (Show, Functor)
 data Stmt a = SExpr (Expr a) | SPass (Expr a) deriving (Show, Functor)

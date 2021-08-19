@@ -20,15 +20,15 @@ import Name
 -- Program --
 -------------
 
-program :: Parser UProgram
-program = Program <$> (whitespace *> many declaration <* whitespace <* eof)
+module' :: String -> Parser UDecl
+module' file = DNamespace file <$> (whitespace *> many declaration <* whitespace <* eof)
 
 ------------------
 -- Declarations --
 ------------------
 
 declaration :: Parser UDecl
-declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> namespaceDecl
+declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> namespaceDecl <|> importDecl
 
 varDecl :: Parser UDecl
 varDecl = do
@@ -62,6 +62,9 @@ namespaceDecl = do
     id <- identifier
     decls <- braces (many declaration)
     return $ DNamespace id decls
+
+importDecl :: Parser UDecl
+importDecl = reserved "import" *> (DImport <$> qualified) <* semi
 
 ----------------
 -- Statements --
@@ -240,8 +243,8 @@ qualified = do
 -- Run --
 ---------
 
-parse :: Text.Text -> String -> Either String UProgram
-parse input filename =
-    case Text.Parsec.parse program filename input of
+parse :: Text.Text -> String -> Either String UDecl
+parse input file =
+    case Text.Parsec.parse (module' file) file input of
         Left err -> Left $ show err
         Right decls -> {- trace (show decls) $ -} Right decls
