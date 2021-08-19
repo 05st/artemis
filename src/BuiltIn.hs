@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fdefer-type-errors #-}
+
 module BuiltIn (defTEnv, defEnv) where
 
 import Data.Functor
@@ -10,6 +12,7 @@ import System.IO
 
 import Type
 import Value
+import Name
 
 -- Built-in functions, type checker guarantees that these patterns are matched
 addInt [VInt a, VInt b] = return $ VInt (a + b)
@@ -57,6 +60,9 @@ fromString [] = VData "Empty" []
 builtIn :: String -> ([Value] -> IO Value) -> Int -> [TVar] -> Type -> (String, Value, Scheme, Bool)
 builtIn name fn arity vs t = (name, VFunc (BuiltIn arity [] fn), Forall (Set.fromList vs) t, False)
 
+toQualified :: String -> QualifiedName
+toQualified = Qualified []
+
 builtIns :: [(String, Value, Scheme, Bool)]
 builtIns = [
         builtIn "addInt" addInt 2 [] (TInt :-> (TInt :-> TInt)),
@@ -90,7 +96,7 @@ builtIns = [
     ]
 
 defTEnv :: TEnv
-defTEnv = Map.fromList $ map (\(i, _, s, m) -> (i, (s, m))) builtIns
+defTEnv = Map.fromList $ map (\(i, _, s, m) -> (toQualified i, (s, m))) builtIns
 
 defEnv :: Env
-defEnv = Map.fromList $ map (\(i, v, _, _) -> (i, v)) builtIns
+defEnv = Map.fromList $ map (\(i, v, _, _) -> (toQualified i, v)) builtIns

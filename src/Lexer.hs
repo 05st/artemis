@@ -22,10 +22,10 @@ lexer = Token.makeTokenParser $ Token.LanguageDef
     , Token.commentLine = "//"
     , Token.nestedComments = True
     , Token.identStart = letter
-    , Token.identLetter = alphaNum <|> oneOf "_'"
+    , Token.identLetter = alphaNum <|> oneOf "_'."
     , Token.opStart = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Token.opLetter =  oneOf ":!#$%&*+./<=>?@\\^|-~"
-    , Token.reservedNames = ["fn", "true", "false", "let", "mut", "pass", "int", "float", "bool", "string", "()", "void", "if", "then", "else", "match", "with", "data"]
+    , Token.reservedNames = ["fn", "true", "false", "let", "mut", "pass", "int", "float", "bool", "string", "()", "void", "if", "then", "else", "match", "with", "data", "namespace"]
     , Token.reservedOpNames = defOps ++ ["->", "=>", "|"]
     , Token.caseSensitive = True }
 

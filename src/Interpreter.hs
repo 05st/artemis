@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fdefer-type-errors #-}
 {-# Language LambdaCase #-}
 
 module Interpreter (interpret) where
@@ -28,11 +29,11 @@ evalDecl :: TDecl -> Interpret ()
 evalDecl = \case
     DStmt s -> evalStmt s
     DVar _ _ id v -> do
-        e <- get
+        e <- undefined --get
         v' <- evalExpr v
         case v' of
-            VFunc (UserDef Nothing p b c) -> put (Map.insert id (VFunc (UserDef (Just id) p b c)) e)
-            _ -> put (Map.insert id v' e)
+            VFunc (UserDef Nothing p b c) -> put undefined --(Map.insert id (VFunc (UserDef (Just id) p b c)) e)
+            _ -> put undefined --(Map.insert id v' e)
     DData tc tps cs -> mapM_ valueConstructor cs
 
 valueConstructor :: (String, [Type]) -> Interpret ()

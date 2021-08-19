@@ -13,7 +13,7 @@ main = do
     input <- TextIO.readFile file
     case parse input file of
         Left err -> putStrLn err
-        Right program ->
+        Right program -> print program >>
             case annotate program of
                 Left err -> print err
                 Right annotated -> interpret annotated

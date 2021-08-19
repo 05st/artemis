@@ -3,6 +3,7 @@ module Parser (Parser.parse) where
 import Data.Functor
 import Data.Functor.Identity
 import qualified Data.Text as Text
+import Data.List.Split (splitOn)
 
 import Text.Parsec
 import Text.Parsec.Expr
@@ -14,6 +15,7 @@ import Debug.Trace
 import Lexer
 import AST
 import Type
+import Name
 
 -------------
 -- Program --
@@ -27,7 +29,7 @@ program = Program <$> (whitespace *> many declaration <* whitespace <* eof)
 ------------------
 
 declaration :: Parser UDecl
-declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl
+declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> namespaceDecl
 
 varDecl :: Parser UDecl
 varDecl = do
@@ -38,12 +40,12 @@ varDecl = do
     reservedOp "="
     expr <- expression
     semi
-    return $ DVar mut typeAnnotation id expr
+    return $ DVar mut typeAnnotation (Qualified [] id) expr
 
 dataDecl :: Parser UDecl
 dataDecl = do
     reserved "data"
-    con <- dataIdentifier
+    con <- Qualified [] <$> dataIdentifier
     tvars <- option [] (angles (sepBy (flip TV Star <$> identifier) comma))
     reservedOp "="
     vcons <- sepBy1 vcon (reservedOp "|")
@@ -51,9 +53,16 @@ dataDecl = do
     return $ DData con tvars vcons
     where
         vcon = do
-            con <- dataIdentifier
+            con <- Qualified [] <$> dataIdentifier
             tvars <- option [] (parens (sepBy type' comma))
             return (con, tvars)
+
+namespaceDecl :: Parser UDecl
+namespaceDecl = do
+    reserved "namespace"
+    id <- identifier
+    decls <- braces (many declaration)
+    return $ DNamespace id decls
 
 ----------------
 -- Statements --
@@ -120,7 +129,7 @@ match = do
     return $ EMatch () expr branches
     where
         pattern = try conPattern <|> litPattern <|> varPattern
-        conPattern = PCon <$> dataIdentifier <*> option [] (parens (sepBy1 pattern comma))
+        conPattern = PCon <$> (Qualified [] <$> dataIdentifier) <*> option [] (parens (sepBy1 pattern comma))
         varPattern = PVar <$> identifier
         litPattern = PLit <$> (int <|> float' <|> bool <|> char' <|> unit)
 
@@ -132,9 +141,9 @@ assign = do
 
 call :: Parser UExpr
 call = do
-    id <- identifier
+    id <- ident
     args <- parens (sepBy1 expression comma)
-    return $ foldl1 (.) (flip (ECall ()) <$> reverse args) (EIdent () id)
+    return $ foldl1 (.) (flip (ECall ()) <$> reverse args) id
 
 item :: Parser UExpr
 item = try call <|> value <|> parens expression
@@ -152,7 +161,7 @@ char' :: Parser Lit
 char' = LChar <$> charLiteral
 
 ident :: Parser UExpr
-ident = EIdent () <$> identifier
+ident = EIdent () . toQualified <$> identifier
 
 unit :: Parser Lit
 unit = LUnit <$ reserved "()"
@@ -173,8 +182,8 @@ function = do
 desugarList :: [UExpr] -> Parser UExpr
 desugarList exprs = do
     case exprs of
-        [] -> return $ EIdent () "Empty"
-        _ -> return $ foldr (ECall () . ECall () (EIdent () "Elem")) (EIdent () "Empty") exprs
+        [] -> return $ EIdent () (Qualified [] "Empty")
+        _ -> return $ foldr (ECall () . ECall () (EIdent () (Qualified [] "Elem"))) (EIdent () (Qualified [] "Empty")) exprs
 
 -- Regular list syntax sugar [e1, e2, e3]
 list :: Parser UExpr
@@ -221,6 +230,10 @@ baseType = (TInt <$ reserved "int") <|> (TFloat <$ reserved "float")
         <|> (TBool <$ reserved "bool") <|> (TChar <$ reserved "char")
         <|> try (TUnit <$ reserved "()") <|> (TVoid <$ reserved "void")
         <|> (TVar <$> typeVar) <|> parens type'
+
+-- Names
+toQualified :: String -> QualifiedName 
+toQualified id = let ns = splitOn "." id in Qualified (init ns) (last ns)
 
 ---------
 -- Run --

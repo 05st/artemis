@@ -1,0 +1,36 @@
+{-# Language LambdaCase #-}
+
+module Resolver (resolve) where
+
+import Control.Monad.Reader
+import Control.Monad.Except
+
+import Data.Functor
+
+import Name
+import AST
+
+data ResolveError = IdkYet
+
+type Resolve = ExceptT ResolveError (Reader [String])
+
+resolve :: UProgram -> UProgram
+resolve (Program decls) = Program $ mapM resolveDecl decls
+
+fixName :: QualifiedName -> Resolve QualifiedName
+fixName (Qualified ns name) = do
+    namespace <- ask
+    return $ Qualified (namespace ++ ns) name
+
+resolveDecl :: UDecl -> Resolve UDecl
+resolveDecl = \case
+    DVar m t name e -> fixName name <&> \name' -> DVar m t name' e
+    other -> return other
+
+resolveStmt :: UStmt -> Resolve UStmt
+resolveStmt = return
+
+resolveExpr :: UExpr -> Resolve UExpr
+resolveExpr = \case
+    EIdent t name -> fixName name <&> EIdent t
+    other -> return other

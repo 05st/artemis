@@ -26,6 +26,7 @@ dependencies:
 - containers
 - text
 - time
+- split
 
 library:
   source-dirs: src

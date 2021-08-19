@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fdefer-type-errors #-}
 {-# Language LambdaCase #-}
 {-# Language TupleSections #-}
 

@@ -6,8 +6,9 @@ module Type where
 import Data.List
 import Data.Set
 import qualified Data.Map as Map
+import Name
 
-type TEnv = Map.Map String (Scheme, Bool)
+type TEnv = Map.Map QualifiedName (Scheme, Bool)
 
 data TVar = TV String Kind deriving (Eq, Ord)
 data Type = TCon String [Type] | TVar TVar deriving (Eq)
