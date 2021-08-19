@@ -11,6 +11,7 @@ At the moment, Artemis has all of these implemented:
 - Implementations for common data types (`List<a>`, `Maybe<a>`, `Either<a, b>`)
 - Non-significant whitespace
 - Automatic currying/partial application
+- Immutable variables by default
 - Built-in functions/types
 - Recursive functions/types
 
