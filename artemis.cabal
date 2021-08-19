@@ -44,7 +44,6 @@ library
     , containers
     , mtl
     , parsec
-    , split
     , text
     , time
   default-language: Haskell2010
@@ -62,7 +61,6 @@ executable artemis-exe
     , containers
     , mtl
     , parsec
-    , split
     , text
     , time
   default-language: Haskell2010
@@ -81,7 +79,6 @@ test-suite artemis-test
     , containers
     , mtl
     , parsec
-    , split
     , text
     , time
   default-language: Haskell2010

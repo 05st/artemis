@@ -1,3 +1,5 @@
 namespace pre {
-    data List<a> = Elem(a, List<a>) | Empty;
+    namespace next {
+        let anotherTest = def::test;
+    }
 }

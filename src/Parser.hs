@@ -3,7 +3,6 @@ module Parser (Parser.parse) where
 import Data.Functor
 import Data.Functor.Identity
 import qualified Data.Text as Text
-import Data.List.Split (splitOn)
 
 import Text.Parsec
 import Text.Parsec.Expr
@@ -137,7 +136,7 @@ assign :: Parser UExpr
 assign = do
     id <- identifier
     reservedOp "="
-    EAssign () id <$> expression
+    EAssign () (Qualified [] id) <$> expression
 
 call :: Parser UExpr
 call = do
@@ -161,7 +160,7 @@ char' :: Parser Lit
 char' = LChar <$> charLiteral
 
 ident :: Parser UExpr
-ident = EIdent () . toQualified <$> identifier
+ident = EIdent () <$> qualified
 
 unit :: Parser Lit
 unit = LUnit <$ reserved "()"
@@ -232,8 +231,10 @@ baseType = (TInt <$ reserved "int") <|> (TFloat <$ reserved "float")
         <|> (TVar <$> typeVar) <|> parens type'
 
 -- Names
-toQualified :: String -> QualifiedName 
-toQualified id = let ns = splitOn "." id in Qualified (init ns) (last ns)
+qualified :: Parser QualifiedName
+qualified = do
+    ids <- sepBy1 identifier (reservedOp "::")
+    return $ Qualified (init ids) (last ids)
 
 ---------
 -- Run --
