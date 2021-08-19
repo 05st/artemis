@@ -1,0 +1,18 @@
+/* Prints the number of nanoseconds it took
+ * to compute factorial(1000).
+ * The built-in 'clock' function returns the
+ * number of nanoseconds since the UNIX epoch.
+*/
+
+let factorial : int -> int
+    = fn(n)
+    => if eqInt(n, 2)
+        then 2
+        else mulInt(n, factorial(subInt(n, 1)));
+
+let init = clock(());
+factorial(1000);
+let end = clock(());
+
+print(showInt(subInt(end, init)));
+

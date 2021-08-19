@@ -25,6 +25,7 @@ dependencies:
 - mtl
 - containers
 - text
+- time
 
 library:
   source-dirs: src

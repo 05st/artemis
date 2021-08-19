@@ -4,11 +4,12 @@ import Data.Functor
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
+import Data.Time
+import Data.Time.Clock.POSIX
 import System.IO
 
 import Type
 import Value
-
 
 -- Built-in functions, type checker guarantees that these patterns are matched
 addInt [VInt a, VInt b] = return $ VInt (a + b)
@@ -20,8 +21,10 @@ addFloat [VFloat a, VFloat b] = return $ VFloat (a + b)
 subFloat [VFloat a, VFloat b] = return $ VFloat (a - b)
 mulFloat [VFloat a, VFloat b] = return $ VFloat (a * b)
 divFloat [VFloat a, VFloat b] = return $ VFloat (a / b)
+fromInt [VInt a] = return $ VFloat (fromIntegral a)
 
 eqInt [VInt a, VInt b] = return $ VBool (a == b)
+neqInt [VInt a, VInt b] = return $ VBool (a /= b)
 
 showInt [VInt a] = return $ fromString (show a)
 showFloat [VFloat a] = return $ fromString (show a)
@@ -29,10 +32,14 @@ showBool [VBool a] = return $ fromString $ if a then "true" else "false"
 showChar' [VChar a] = return $ fromString (show a)
 showUnit [VUnit] = return $ fromString "()"
 
+readInt [a] = return $ VInt (read $ toString a)
+
 print' [a] = putStr (toString a) >> hFlush stdout >> return VUnit
+error' [a] = Prelude.error $ "ERROR: " ++ toString a
+clock [a] = getCurrentTime <&> VInt . floor . (1e9 *) . nominalDiffTimeToSeconds . utcTimeToPOSIXSeconds
+
 input [a] = getLine <&> fromString
 
-error' [a] = Prelude.error $ "ERROR: " ++ toString a
 
 -- Helper function
 -- Turns a List<char> into a Haskell [Char]
@@ -59,6 +66,7 @@ builtIns = [
         builtIn "subFloat" subFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
         builtIn "mulFloat" mulFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
         builtIn "divFloat" divFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
+        builtIn "fromInt" fromInt 1 [] (TInt :-> TFloat),
 
         builtIn "eqInt" eqInt 2 [] (TInt :-> (TInt :-> TBool)),
 
@@ -68,9 +76,13 @@ builtIns = [
         builtIn "showChar" showChar' 1 [] (TChar :-> TList TChar),
         builtIn "showUnit" showUnit 1 [] (TUnit :-> TList TChar),
 
+        builtIn "readInt" readInt 1 [] (TList TChar :-> TInt),
+
         builtIn "print" print' 1 [] (TList TChar :-> TUnit),
-        builtIn "input" input 1 [] (TUnit :-> TList TChar),
-        builtIn "error" error' 1 [TV "a" Star] (TList TChar :-> TVar (TV "a" Star)) 
+        builtIn "error" error' 1 [TV "a" Star] (TList TChar :-> TVar (TV "a" Star)),
+        builtIn "clock" clock 1 [] (TUnit :-> TInt),
+
+        builtIn "input" input 1 [] (TUnit :-> TList TChar)
     ]
 
 defTEnv :: TEnv

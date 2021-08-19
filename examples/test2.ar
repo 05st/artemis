@@ -1,7 +1,36 @@
-let factorial
-    = fn(n)
-    => if eqInt(n, 1)
-        then 1
-        else mulInt(n, factorial(subInt(n,1)));
+data List<a> = Elem(a, List<a>) | Empty;
 
-print(showInt(factorial(1000)));
+let concat : List<a> -> List<a> -> List<a>
+    = fn(l1, l2)
+    => match l1 with
+        Elem(a, l1') -> Elem(a, concat(l1', l2)),
+        Empty -> l2;
+let (++) = concat;
+
+let println : List<char> -> ()
+    = fn(s)
+    => print(s ++ "\n");
+
+let ask : List<char> -> List<char>
+    = fn(q)
+    => { print(q)
+       ; pass input(())
+       ;};
+
+data Nat = Zero | Succ(Nat);
+
+let toNat : int -> Nat
+    = fn(n)
+    => if eqInt(n, 0)
+        then Zero
+        else Succ(toNat(subInt(n, 1)));
+
+let showNat : Nat -> List<char>
+    = fn(n)
+    => match n with
+        Zero -> "Zero",
+        Succ(n') -> "Succ " ++ showNat(n');
+
+let num = readInt(ask("How much Succ?\n"));
+println(showNat(toNat(num)));
+
