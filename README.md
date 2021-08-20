@@ -9,7 +9,8 @@ At the moment, Artemis has all of these implemented:
 - Pattern matching
 - Module system via namespaces/imports
 - User-defined prefix/infix operators
-- Implementations for common data types (`List<a>`, `Maybe<a>`, `Either<a, b>`)
+- A small standard library
+- Implementations for common data types (lists, tuples, etc.)
 - Non-significant whitespace
 - Automatic currying/partial application
 - Immutable variables by default
@@ -20,17 +21,17 @@ At the moment, Artemis has all of these implemented:
 It would be great to have these implemented eventually:
 - Typeclasses (for ad-hoc polymorphism)
 - Exhaustiveness/redundancy checking for pattern matching
-- A small prelude library
+- An improved standard library
 - Bytecode VM
 
 ## Examples
 ```
-data List<a> = Elem(a, List<a>) | Empty;
+data List<a> = Cons(a, List<a>) | Empty;
 
 let fold : (a -> b -> b) -> b -> List<a> -> b
   = fn(f, init, list)
   => match list with
-    Elem(a, list') -> f(a, fold(f, init, list')),
+    Cons(a, list') -> f(a, fold(f, init, list')),
     Empty -> init;
     
 // 'fold' was automatically curried
