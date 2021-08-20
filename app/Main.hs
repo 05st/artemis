@@ -23,7 +23,9 @@ main = do
     inputs <- mapM TextIO.readFile args
     case parseFiles (zip files inputs) of
         Left err -> putStrLn err
-        Right program -> print (resolve program)
+        Right program -> case annotate (resolve program) of
+            Left err -> print err
+            Right annotated -> print annotated
 
 {-
     case parse input (takeBaseName file) of

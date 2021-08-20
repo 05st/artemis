@@ -61,7 +61,7 @@ builtIn :: String -> ([Value] -> IO Value) -> Int -> [TVar] -> Type -> (String, 
 builtIn name fn arity vs t = (name, VFunc (BuiltIn arity [] fn), Forall (Set.fromList vs) t, False)
 
 toQualified :: String -> QualifiedName
-toQualified = Qualified []
+toQualified = Qualified Global
 
 builtIns :: [(String, Value, Scheme, Bool)]
 builtIns = [

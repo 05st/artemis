@@ -1,7 +1,16 @@
-import hello::there;
+data List<a> = Elem(a, List<a>) | Empty;
 
-namespace pre {
-    namespace next {
-        let anotherTest = thing::def::test;
-    }
+namespace other {
+    let test = 124;
 }
+
+namespace other2 {
+    import namespaces::other;
+    let test2 = test;
+}
+
+namespace next {
+    import namespaces::other2;
+    let anotherTest = test2;
+}
+
