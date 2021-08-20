@@ -17,7 +17,7 @@ import Type
 type Resolve = Reader Namespace
 
 resolve :: UProgram -> UProgram
-resolve (Program decls) = Program $ runReader (mapM resolveDecl decls) Global
+resolve (Program decls) = Program $ runReader (traverse resolveDecl decls) Global
 
 fixName :: QualifiedName -> Resolve QualifiedName
 fixName (Qualified ns name) = do
@@ -34,11 +34,15 @@ resolveConstructor (name, ts) = (,ts) <$> fixName name
 
 resolveDecl :: UDecl -> Resolve UDecl
 resolveDecl = \case
-    DVar m t name e -> DVar m t <$> fixName name <*> resolveExpr e
-    DNamespace n ds i -> flip (DNamespace n) i <$> local (`Relative` n) (mapM resolveDecl ds)
+    DVar m t name e -> do
+        t' <- case t of 
+            Just ann -> Just <$> resolveType ann
+            Nothing -> return Nothing
+        DVar m t' <$> fixName name <*> resolveExpr e
+    DNamespace n ds i -> flip (DNamespace n) i <$> local (`Relative` n) (traverse resolveDecl ds)
     DData con tvs vcs -> do
         con' <- fixName con
-        vcs' <- mapM resolveConstructor vcs
+        vcs' <- traverse resolveConstructor vcs
         return $ DData con' tvs vcs'
     DStmt s -> DStmt <$> resolveStmt s
 
@@ -58,9 +62,9 @@ resolveExpr = \case
         return $ EIf t c' a' b'
     EMatch t e bs -> do
         e' <- resolveExpr e
-        bs' <- mapM (\(p, pe) -> (,) <$> resolvePattern p <*> resolveExpr pe) bs
+        bs' <- traverse (\(p, pe) -> (,) <$> resolvePattern p <*> resolveExpr pe) bs
         return $ EMatch t e' bs'
-    EBlock t ds -> EBlock t <$> mapM resolveDecl ds
+    EBlock t ds -> EBlock t <$> traverse resolveDecl ds
     EBinary t o l r -> do
         l' <- resolveExpr l
         r' <- resolveExpr r
@@ -71,6 +75,10 @@ resolveExpr = \case
     a@(ELit _ _) -> return a
 
 resolvePattern :: Pattern -> Resolve Pattern
-resolvePattern (PCon name ps) = PCon <$> fixName name <*> mapM resolvePattern ps
+resolvePattern (PCon name ps) = PCon <$> fixName name <*> traverse resolvePattern ps
 resolvePattern (PLit l) = return $ PLit l
 resolvePattern (PVar v) = return $ PVar v
+
+resolveType :: Type -> Resolve Type
+resolveType (TCon name ts) = TCon <$> fixName name <*> traverse resolveType ts
+resolveType (TVar tv) = return $ TVar tv

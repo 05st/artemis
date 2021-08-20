@@ -11,28 +11,28 @@ import Name
 type TEnv = Map.Map QualifiedName (Scheme, Bool)
 
 data TVar = TV String Kind deriving (Eq, Ord)
-data Type = TCon String [Type] | TVar TVar deriving (Eq)
+data Type = TCon QualifiedName [Type] | TVar TVar deriving (Eq)
 data Scheme = Forall (Set TVar) Type deriving (Show)
 
 data Kind = Star | Kind :*> Kind deriving (Show, Eq, Ord)
 
 data Constraint = Type :~: Type
 
-pattern TInt = TCon "int" []
-pattern TFloat = TCon "float" []
-pattern TBool = TCon "bool" []
-pattern TChar = TCon "char" []
-pattern TUnit = TCon "()" []
-pattern TVoid = TCon "void" []
-pattern a :-> b = TCon "->" [a, b]
-pattern TList a = TCon "List" [a]
+pattern TInt = TCon (Qualified Global "int") []
+pattern TFloat = TCon (Qualified Global "float") []
+pattern TBool = TCon (Qualified Global "bool") []
+pattern TChar = TCon (Qualified Global "char") []
+pattern TUnit = TCon (Qualified Global "()") []
+pattern TVoid = TCon (Qualified Global "void") []
+pattern a :-> b = TCon (Qualified Global "->") [a, b]
+pattern TList a = TCon (Qualified (Relative Global "std") "List") [a]
 
 instance Show Type where
     show = \case
         TVar tv -> show tv
         a :-> b -> '(':show a ++ " -> " ++ show b ++ ")"
-        TCon c [] -> c
-        TCon c ts -> c ++ '<':intercalate ", " (Prelude.map show ts) ++ ">"
+        TCon c [] -> show c
+        TCon c ts -> show c ++ '<':intercalate ", " (Prelude.map show ts) ++ ">"
 
 instance Show TVar where
     show (TV s _) = s

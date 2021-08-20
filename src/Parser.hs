@@ -173,7 +173,7 @@ char' :: Parser Lit
 char' = LChar <$> charLiteral
 
 ident :: Parser UExpr
-ident = EIdent () <$> qualified
+ident = EIdent () <$> qualified identifier
 
 unit :: Parser Lit
 unit = LUnit <$ reserved "()"
@@ -226,7 +226,7 @@ funcType = do
 
 conType :: Parser Type
 conType = do
-    con <- dataIdentifier
+    con <- qualified dataIdentifier
     tps <- option [] (angles (sepBy type' comma))
     return $ TCon con tps
 
@@ -244,9 +244,9 @@ baseType = (TInt <$ reserved "int") <|> (TFloat <$ reserved "float")
         <|> (TVar <$> typeVar) <|> parens type'
 
 -- Names
-qualified :: Parser QualifiedName
-qualified = do
-    ids <- sepBy1 identifier (reservedOp "::")
+qualified :: Parser String -> Parser QualifiedName
+qualified p = do
+    ids <- sepBy1 p (reservedOp "::")
     let ns = foldr (flip Relative) Global (reverse . init $ ids)
     return $ Qualified ns (last ids)
 

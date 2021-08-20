@@ -52,8 +52,8 @@ toString (VData (Qualified _"Empty") []) = []
 toString _ = error "Not possible"
 
 fromString :: String -> Value
-fromString (c : cs) = VData (Qualified Global "Cons") [VChar c, fromString cs]
-fromString [] = VData (Qualified Global "Empty") []
+fromString (c : cs) = VData (Qualified (Relative Global "std") "Cons") [VChar c, fromString cs]
+fromString [] = VData (Qualified (Relative Global "std") "Empty") []
 
 builtIn :: String -> ([Value] -> IO Value) -> Int -> [TVar] -> Type -> (String, Value, Scheme, Bool)
 builtIn name fn arity vs t = (name, VFunc (BuiltIn arity [] fn), Forall (Set.fromList vs) t, False)

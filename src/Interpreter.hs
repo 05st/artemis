@@ -6,6 +6,7 @@ import qualified Data.Map as Map
 
 import Control.Monad.Reader
 import Control.Monad.State
+import Data.Maybe
 
 import System.IO
 
@@ -17,10 +18,10 @@ import Value
 import BuiltIn
 import Name
 
-type Interpret a = ReaderT (Namespace, [Namespace]) (StateT Env IO) a
+type Interpret a = ReaderT Namespace (StateT (Env, Map.Map Namespace [Namespace]) IO) a
 
 interpret :: TProgram -> IO ()
-interpret (Program ds) = evalStateT (runReaderT (evalProgram ds) (Global, [])) defEnv
+interpret (Program ds) = evalStateT (runReaderT (evalProgram ds) Global) (defEnv, Map.empty)
 
 evalProgram :: [TDecl] -> Interpret ()
 evalProgram = foldr ((>>) . evalDecl) (return ())
@@ -29,23 +30,26 @@ evalDecl :: TDecl -> Interpret ()
 evalDecl = \case
     DStmt s -> evalStmt s
     DVar _ _ id v -> do
-        e <- get
+        (e, m) <- get
         v' <- evalExpr v
         case v' of
-            VFunc (UserDef ns Nothing p b c) -> put (Map.insert id (VFunc (UserDef ns (Just id) p b c)) e)
-            _ -> put (Map.insert id v' e)
+            VFunc (UserDef ns Nothing p b c) -> put (Map.insert id (VFunc (UserDef ns (Just id) p b c)) e, m)
+            _ -> put (Map.insert id v' e, m)
     DData tc tps cs -> mapM_ valueConstructor cs
     DNamespace name decls imps -> do
-        (ns, _) <- ask
-        local (const (Relative ns name, imps)) (foldr ((>>) . evalDecl) (return ()) decls)
+        ns <- ask
+        (e, imap) <- get
+        let newns = Relative ns name
+        put (e, Map.insert newns imps imap)
+        local (const newns) (foldr ((>>) . evalDecl) (return ()) decls)
 
 valueConstructor :: (QualifiedName, [Type]) -> Interpret ()
 valueConstructor (vc, vts) = do
-    env <- get
+    (env, m) <- get
     let arity = length vts
     case vts of
-        [] -> put (Map.insert vc (VData vc []) env)
-        _ -> put (Map.insert vc (VFunc (BuiltIn arity [] (return . VData vc))) env)
+        [] -> put (Map.insert vc (VData vc []) env, m)
+        _ -> put (Map.insert vc (VFunc (BuiltIn arity [] (return . VData vc))) env, m)
 
 evalStmt :: TStmt -> Interpret ()
 evalStmt = \case
@@ -65,8 +69,9 @@ evalExpr = \case
     ELit _ l -> return $ evalLit l
     EIdent _ name -> lookupEnv name
     EFunc _ p e -> do
-        (ns, _) <- ask -- SHOULD BE RESOLVED ALREADY
-        gets (VFunc . UserDef ns Nothing (Qualified ns p) e)
+        ns <- ask -- SHOULD BE RESOLVED ALREADY
+        (env, _) <- get
+        return . VFunc $ UserDef ns Nothing (Qualified ns p) e env
     EIf _ c a b -> do
         c' <- evalExpr c
         let VBool cv = c'
@@ -87,12 +92,13 @@ evalExpr = \case
         let VFunc vf = f'
         case vf of
             UserDef ns n p e c -> do
-                orig <- get
+                (orig, m) <- get
                 case n of
-                    Just id -> put (Map.insert p a' (Map.insert id f' c))
-                    Nothing -> put (Map.insert p a' c)
-                val <- local (\(_, _) -> (ns, [])) (evalExpr e)
-                put orig
+                    Just id -> put (Map.insert p a' (Map.insert id f' c), m)
+                    Nothing -> put (Map.insert p a' c, m)
+                val <- local (const ns) (evalExpr e)
+                (_, m') <- get
+                put (orig, m')
                 return val
             BuiltIn n args f -> do
                 let args' = args ++ [a']
@@ -100,9 +106,9 @@ evalExpr = \case
                     then liftIO (f args')
                     else return $ VFunc (BuiltIn n args' f)
     EAssign _ id v -> do
-        e <- get
+        (e, m) <- get
         v' <- evalExpr v
-        put (Map.insert id v' e)
+        put (Map.insert id v' e, m)
         return v'
     _ -> error "Not possible"
 
@@ -120,8 +126,9 @@ checkPattern _ _ = False
 
 setPatternVars :: Value -> Pattern -> Interpret ()
 setPatternVars val (PVar var) = do
-    (ns, _) <- ask
-    get >>= put . Map.insert (Qualified ns var) val
+    ns  <- ask
+    (env, m) <- get
+    put (Map.insert (Qualified ns var) val env, m)
 setPatternVars (VData dcon vs) (PCon con ps) = sequence_ [setPatternVars v p | (v, p) <- zip vs ps]
 setPatternVars _ _ = return ()
 
@@ -138,18 +145,21 @@ lookupEnv name = do
 
 lookupEnv' :: QualifiedName -> QualifiedName -> Interpret (Maybe Value)
 lookupEnv' name orig = do
-    env <- get
+    (env, m) <- get
     case Map.lookup name env of
         Just x -> return (Just x)
         Nothing -> case name of
-            (Qualified Global _) -> ask >>= \(_, imps) -> lookupImports imps orig
+            (Qualified Global _) -> do
+                ns <- ask
+                let imps = fromMaybe [] (Map.lookup ns m)
+                lookupImports imps orig
             (Qualified (Relative parent _) s) -> lookupEnv' (Qualified parent s) orig
 
 lookupImports :: [Namespace] -> QualifiedName -> Interpret (Maybe Value)
 lookupImports [] _ = return Nothing
 lookupImports (i : is) name@(Qualified ns s) = do
     let name' = Qualified i s
-    res <- local (const (i, [])) (lookupEnv' name' name')
+    res <- local (const i) (lookupEnv' name' name')
     case res of
         Just _ -> return res
         Nothing -> lookupImports is name

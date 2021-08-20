@@ -5,6 +5,8 @@ import qualified Data.Text.IO as TextIO
 import System.Environment
 import System.FilePath.Posix (takeBaseName)
 
+import Debug.Trace
+
 import Parser
 import Resolver
 import Infer

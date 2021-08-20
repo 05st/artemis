@@ -24,7 +24,7 @@ data TypeError = Mismatch Type Type | NotDefined QualifiedName | NotDefinedMany 
                | EmptyBlock | EmptyMatch | BlockData | GlobalPass | BlockNamespace | InfiniteType TVar Type
                deriving (Show)
 
-type Infer a = RWST (Namespace, [Namespace]) [Constraint] (TEnv, Int) (Except TypeError) a
+type Infer a = RWST Namespace [Constraint] (TEnv, Map.Map Namespace [Namespace], Int) (Except TypeError) a
 type Solve a = ExceptT TypeError Identity a
 
 type Subst = Map.Map TVar Type
@@ -53,7 +53,7 @@ instance Substitutable a => Substitutable [a] where
 
 annotate :: UProgram -> Either TypeError TProgram
 annotate (Program decls) =
-    case runIdentity $ runExceptT $ runRWST (annotateNamespace decls []) (Global, []) (defTEnv, 0) of
+    case runIdentity $ runExceptT $ runRWST (annotateNamespace decls []) Global (defTEnv, Map.empty, 0) of
         Left err -> Left err
         Right (p, _, cs) -> do
             s <- runSolve cs
@@ -66,7 +66,7 @@ unify :: Type -> Type -> Solve Subst
 unify a b | a == b = return Map.empty
 unify (TVar v) t = bind v t
 unify t (TVar v) = bind v t
-unify a@(TCon c1 ts1) b@(TCon c2 ts2)
+unify a@(TCon (Qualified _ c1) ts1) b@(TCon (Qualified _ c2) ts2)
     | c1 /= c2 = throwError $ Mismatch a b
     | otherwise = unifyMany ts1 ts2
 
@@ -97,8 +97,8 @@ runSolve cs = runIdentity $ runExceptT $ solve Map.empty cs
 
 fresh :: Infer Type
 fresh = do
-    (env, n) <- get
-    put (env, n+1)
+    (env, m, n) <- get
+    put (env, m, n+1)
     return . TVar . flip TV Star $ varNames !! n
     where varNames = map ('_':) $ [1..] >>= flip replicateM ['a'..'z']
 
@@ -114,33 +114,32 @@ instantiate (Forall vs t) = do
     return $ apply s t
 
 scoped :: QualifiedName -> (Scheme, Bool) -> Infer a -> Infer a
-scoped id d m = do
-    (env, n) <- get
-    put (Map.insert id d (Map.delete id env), n)
-    res <- m
-    (_, n') <- get
-    put (env, n')
+scoped id d toRun = do
+    (env, m, n) <- get
+    put (Map.insert id d (Map.delete id env), m, n)
+    res <- toRun
+    (_, m', n') <- get
+    put (env, m', n')
     return res
 
 scopedMany :: [(QualifiedName, (Scheme, Bool))] -> Infer a -> Infer a
 scopedMany [] m = m
 scopedMany ((id, d) : vs) m = scoped id d (scopedMany vs m)
 
-
 constrain :: Constraint -> Infer ()
 constrain = tell . (:[])
 
 valueConstructors :: QualifiedName -> [TVar] -> [(QualifiedName, [Type])] -> Infer ()
 valueConstructors _ _ [] = return ()
-valueConstructors tc@(Qualified _ s) tps ((vn, vts) : vcs) = do
-    (env, n) <- get
+valueConstructors tc tps ((vn, vts) : vcs) = do
+    (env, m, n) <- get
     let tps' = map TVar tps
     let vtps = tvs tps'
     let vvts = tvs vts
     if (vtps `Set.intersection` vvts) /= vvts
         then throwError $ NotDefinedMany (Set.toList (vvts `Set.difference` vtps))
-        else let sc = generalize env $ foldr (:->) (TCon s tps') vts
-             in put (Map.insert vn (sc, False) (Map.delete vn env), n) *> valueConstructors tc tps vcs
+        else let sc = generalize env $ foldr (:->) (TCon tc tps') vts
+             in put (Map.insert vn (sc, False) (Map.delete vn env), m, n) *> valueConstructors tc tps vcs
 
 annotateNamespace :: [UDecl] -> [TDecl] -> Infer [TDecl]
 annotateNamespace [] tds = return $ reverse tds
@@ -149,13 +148,15 @@ annotateNamespace (d : ds) tds =
         DStmt s -> annotateStmt s >>= \s' -> annotateNamespace ds (DStmt s' : tds)
         DData tc tps vcs -> valueConstructors tc tps vcs *> annotateNamespace ds (DData tc tps vcs: tds)
         DVar m _ id _ -> inferVarDecl d >>= \(td', sc) -> do
-            (env, n) <- get
-            put (Map.insert id (sc, m) (Map.delete id env), n)
+            (env, impMap, n) <- get
+            put (Map.insert id (sc, m) (Map.delete id env), impMap, n)
             annotateNamespace ds (td' : tds)
         DNamespace name nds imps -> do
-            (ns, _) <- ask
-            nds' <- local (const (Relative ns name, imps)) (annotateNamespace nds [])
-            (env, _) <- get
+            ns <- ask
+            (e, m, n) <- get
+            let newns = Relative ns name
+            put (e, Map.insert newns imps m, n)
+            nds' <- local (const newns) (annotateNamespace nds [])
             annotateNamespace ds (DNamespace name nds' imps : tds)
         {-
             (ns, is, n) <- get
@@ -173,7 +174,7 @@ annotateStmt = \case
 
 inferVarDecl :: UDecl -> Infer (TDecl, Scheme)
 inferVarDecl (DVar m ta id e) = do
-    (env, _) <- get
+    (env, _, _) <- get
     recurType <- fresh
     ((e', t), c) <- listen $ scoped id (Forall Set.empty recurType, False) (infer e)
     s <- liftEither $ runSolve c
@@ -212,7 +213,7 @@ infer = \case
     ELit _ l -> inferLit l >>= \(l', t) -> return (ELit t l', t)
     EFunc _ p e -> do
         pt <- fresh
-        (ns, _) <- ask -- SHOULD BE RESOLVED ALREADY
+        ns <- ask -- SHOULD BE RESOLVED ALREADY
         (e', rt) <- scoped (Qualified ns p) (Forall Set.empty pt, False) (infer e)
         let t = pt :-> rt
         return (EFunc t p e', t)
@@ -235,7 +236,7 @@ infer = \case
         (r', rt) <- infer r
         t <- fresh
         let t1 = lt :-> (rt :-> t)
-        (ns, _) <- ask -- SHOULD BE RESOLVED ALREADY
+        ns <- ask -- SHOULD BE RESOLVED ALREADY
         let op' = Qualified ns op
         t2 <- lookupType op'
         {-
@@ -251,7 +252,7 @@ infer = \case
     EUnary _ op a -> do
         (a', at) <- infer a
         t <- fresh
-        (ns, _) <- ask -- SHOULD BE RESOLVED ALREADY
+        ns <- ask -- SHOULD BE RESOLVED ALREADY
         let op' = Qualified ns op
         ot <- lookupType op'
         {-
@@ -291,7 +292,7 @@ inferBranch :: Type -> (Pattern, UExpr) -> Infer ((Pattern, TExpr), Type)
 inferBranch mt (p, e) = do
     (pt, vars) <- inferPattern p
     constrain $ pt :~: mt
-    (ns, _) <- ask -- SHOULD BE RESOLVED ALREADY
+    ns <- ask -- SHOULD BE RESOLVED ALREADY
     (e', et) <- scopedMany (map (\(id, sc) -> (Qualified ns id, (sc, False))) vars) (infer e)
     return ((p, e'), et)
 
@@ -314,18 +315,21 @@ lookupEnv name = do
 
 lookupEnv' :: QualifiedName -> QualifiedName -> Infer (Maybe (Scheme, Bool))
 lookupEnv' name orig = do
-    (env, _) <- get
+    (env, m, _) <- get
     case Map.lookup name env of
         Just x -> return (Just x)
         Nothing -> case name of
-            (Qualified Global _) -> ask >>= \(_, imps) -> lookupImports imps orig
+            (Qualified Global _) -> do
+                ns <- ask
+                let imps = fromMaybe [] (Map.lookup ns m)
+                lookupImports imps orig
             (Qualified (Relative parent _) s) -> lookupEnv' (Qualified parent s) orig
 
 lookupImports :: [Namespace] -> QualifiedName -> Infer (Maybe (Scheme, Bool))
 lookupImports [] _ = return Nothing
 lookupImports (i : is) name@(Qualified ns os) = do
     let name' = Qualified i os
-    res <- local (const (i, [])) (lookupEnv' name' name')
+    res <- local (const i) (lookupEnv' name' name')
     case res of
         Just _ -> return res
         Nothing -> lookupImports is name
