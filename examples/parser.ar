@@ -1,0 +1,21 @@
+import std;
+
+data ParserError = ExpectEncounter(char, char);
+
+// Parser monad definition
+data Parser<a> = Parser(List<char> -> Pair<List<char>, Either<ParserError, a>>);
+
+// Extracts parser function
+let runParser : Parser<a> -> List<char> -> Pair<List<char>, Either<ParserError, a>>
+    = fn(p)
+    => match p with
+        Parser(f) -> f;
+
+// Creates an instance of the parser monad
+let pureParser : a -> Parser<a>
+    = fn(a)
+    => Parser(fn(in) => Pair(in, Right(a)));
+
+let parseAny : Parser<char>
+    = Parser(fn(in) => Pair(tail(in), Right(head(in))));
+

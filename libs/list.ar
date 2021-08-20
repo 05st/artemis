@@ -25,3 +25,17 @@ let concat : List<a> -> List<a> -> List<a>
 
 let (++) = concat;
 
+// Extracts first element of list, if empty throw an error.
+let head : List<a> -> a
+    = fn(l)
+    => match l with
+        Cons(x, l_) -> x,
+        Empty -> error("list::head Empty");
+
+// Returns entire list except first element. If empty, throws an error.
+let tail : List<a> -> List<a>
+    = fn(l)
+    => match l with
+        Cons(x_, tail) -> tail,
+        Empty -> error("list::tail Empty");
+
