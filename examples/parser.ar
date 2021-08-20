@@ -139,4 +139,4 @@ let parseParens : Parser<a> -> Parser<a>
 match runParser(parseParens(someParser(parseChar('a'))), "(aa)ba!there") with
     Pair(rest, Left(err)) -> print(showParserError(err) ++ "\nRest: " ++ rest ++ "\n"),
     Pair(rest, Right(res)) -> print("Parsed: " ++ res ++ "\nRest: " ++ rest ++ "\n");
-    // BUG ABOVE: print(res ++ "\n"...) will typecheck, even if res is a char
+    // FIXME: BUG ABOVE print(res ++ "\n"...) will int typecheck, even if res is a char
