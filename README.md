@@ -7,6 +7,7 @@ At the moment, Artemis has all of these implemented:
 - Type inference (Hindley-Milner)
 - Algebraic data types
 - Pattern matching
+- Module system via namespaces/imports
 - User-defined prefix/infix operators
 - Implementations for common data types (`List<a>`, `Maybe<a>`, `Either<a, b>`)
 - Non-significant whitespace
@@ -20,7 +21,6 @@ It would be great to have these implemented eventually:
 - Typeclasses (for ad-hoc polymorphism)
 - Exhaustiveness/redundancy checking for pattern matching
 - A small prelude library
-- Module system
 - Bytecode VM
 
 ## Examples
