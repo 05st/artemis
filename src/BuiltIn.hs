@@ -80,7 +80,7 @@ builtIns = [
         builtIn "eqInt" eqInt 2 [] (TInt :-> (TInt :-> TBool)),
         builtIn "eqFloat" eqFloat 2 [] (TFloat :-> (TFloat :-> TBool)),
         builtIn "eqBool" eqBool 2 [] (TBool :-> (TBool :-> TBool)),
-        builtIn "eqChar" eqChar 2 [] (TChar :-> (TChar :-> TChar)),
+        builtIn "eqChar" eqChar 2 [] (TChar :-> (TChar :-> TBool)),
 
         builtIn "showInt" showInt 1 [] (TInt :-> TList TChar),
         builtIn "showFloat" showFloat 1 [] (TFloat :-> TList TChar),

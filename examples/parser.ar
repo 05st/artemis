@@ -1,6 +1,13 @@
+// This example demonstrates a very simple implementation of a parser combinator library in Artemis.
+
 import std; // list, either
 
 data ParserError = ExpectEncounter(List<char>, List<char>);
+
+let showParserError : ParserError -> List<char>
+    = fn(err)
+    => match err with
+        ExpectEncounter(expect, encounter) -> "Expected: " ++ expect ++ "; encountered: " ++ encounter ++ ".";
 
 // Parser monad definition
 data Parser<a> = Parser(List<char> -> Pair<List<char>, Either<ParserError, a>>);
@@ -14,14 +21,10 @@ let runParser : Parser<a> -> List<char> -> Pair<List<char>, Either<ParserError, 
 // Parser is a functor
 let fmapParser : (a -> b) -> Parser<a> -> Parser<b>
     = fn(f, p)
-    => {
-        let pfn
-            = fn(in)
-            => match runParser(p, in) with
-                Pair(rest, Left(err)) -> Pair(rest, Left(err)),
-                Pair(rest, Right(parsed)) -> Pair(rest, Right(f(parsed)));
-        pass Parser(pfn);
-    };
+    => Parser(fn(in) =>
+        match runParser(p, in) with
+            Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+            Pair(rest, Right(parsed)) -> Pair(rest, Right(f(parsed))));
 
 // Creates an instance of the parser monad
 let pureParser : a -> Parser<a>
@@ -31,36 +34,82 @@ let pureParser : a -> Parser<a>
 // Parser is an applicative (along with pureParser)
 let applyParser : Parser<a -> b> -> Parser<a> -> Parser<b>
     = fn(pf, p)
-    => {
-        let pfn
-            = fn(in)
-            => match runParser(pf, in) with
-                Pair(rest, Left(err)) -> Pair(rest, Left(err)),
-                Pair(rest, Right(f)) ->
-                    match runParser(p, rest) with
-                        Pair(rest', Left(err')) -> Pair(rest', Left(err')),
-                        Pair(rest', Right(x)) -> Pair(rest', Right(f(x)));
-        pass Parser(pfn);
-    };
+    => Parser(fn(in) =>
+        match runParser(pf, in) with
+            Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+            Pair(rest, Right(f)) ->
+                match runParser(p, rest) with
+                    Pair(rest', Left(err')) -> Pair(rest', Left(err')),
+                    Pair(rest', Right(x)) -> Pair(rest', Right(f(x))));
 
 // Parser is a monad
 let bindParser : Parser<a> -> (a -> Parser<b>) -> Parser<b>
     = fn(p, f)
+    => Parser(fn(in) =>
+        match runParser(p, in) with
+            Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+            Pair(rest, Right(a)) ->
+                match runParser (f(a), rest) with
+                    Pair(rest', Left(err')) -> Pair(rest', Left(err')),
+                    Pair(rest', Right(b)) -> Pair(rest', Right(b)));
+
+let (:*>) : Parser<a> -> Parser<b> -> Parser<b>
+    = fn(pa, pb)
+    => bindParser(pa, fn(a_) => pb);
+
+let (<*:) : Parser<a> -> Parser<b> -> Parser<a>
+    = fn(pa, pb)
+    => bindParser(pa, fn(a) => pb :*> pureParser(a));
+
+// Runs parser, reverts stream on fail
+let tryParser : Parser<a> -> Parser<a>
+    = fn(p)
+    => Parser(fn(in) =>
+        match runParser(p, in) with
+            Pair(rest_, Left(err)) -> Pair(in, Left(err)),
+            Pair(rest, Right(a)) -> Pair(rest, Right(a)));
+
+// Attempts first parser, if it fails, runs second parser with rest of stream from first.
+let elseParser : Parser<a> -> Parser<a> -> Parser<a>
+    = fn(pa, pb)
+    => Parser(fn(in) =>
+        match runParser(pa, in) with
+            Pair(rest, Left(err)) -> runParser(pb, rest),
+            Pair(rest, Right(a)) -> Pair(rest, Right(a)));
+let (<|>) = elseParser;
+
+// Parses zero or more
+let manyParser : Parser<a> -> Parser<List<a>>
+    = fn(p)
     => {
-        let pfn
-            = fn(in)
+        let go = fn(in)
             => match runParser(p, in) with
-                Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+                Pair(rest_, Left(err)) -> Pair(in, Right(Empty)), 
                 Pair(rest, Right(a)) ->
-                    match runParser (f(a), rest) with
-                        Pair(rest', Left(err')) -> Pair(rest', Left(err')),
-                        Pair(rest', Right(b)) -> Pair(rest', Right(b));
-        pass Parser(pfn);
+                    match go(rest) with
+                        Pair(rest', Left(err)) -> Pair(rest', Left(err)),
+                        Pair(rest', Right(as)) -> Pair(rest', Right(Cons(a, as)));
+        pass Parser(go);
     };
 
-let parseAny : Parser<char>
-    = Parser(fn(in) => Pair(tail(in), Right(head(in))));
+// Parses one or more
+let someParser : Parser<a> -> Parser<List<a>>
+    = fn(p)
+    => Parser(fn(in) =>
+        match runParser(p, in) with
+            Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+            Pair(rest, Right(a)) ->
+                match runParser(manyParser(p), rest) with
+                    Pair(rest', Left(err)) -> Pair(rest', Left(err)),
+                    Pair(rest', Right(as)) -> Pair(rest', Right(Cons(a, as))));
 
+// Parses any character
+let parseAny : Parser<char>
+    = Parser(fn(in) => match in with
+        Cons(a, t) -> Pair(t, Right(a)),
+        Empty -> Pair(Empty, Left(ExpectEncounter("any", "end of input"))));
+
+// Parses a character based on a predicate, the second parameter is the description used in an error
 let parsePred : (char -> bool) -> List<char> -> Parser<char>
     = fn(pred, desc)
     => {
@@ -72,3 +121,22 @@ let parsePred : (char -> bool) -> List<char> -> Parser<char>
         pass bindParser(parseAny, check);
     };
 
+// Parses a single specific character
+let parseChar : char -> Parser<char>
+    = fn(c)
+    => parsePred(eqChar(c), Cons(c, Empty));
+
+// Parses a sequence of characters
+let parseString : List<char> -> Parser<List<char>>
+    = fn(s)
+    => match s with
+        Empty -> pureParser(Empty),
+        Cons(c, cs) -> applyParser(fmapParser(Cons, parseChar(c)), parseString(cs));
+
+let parseParens : Parser<a> -> Parser<a>
+    = fn(p) => parseChar('(') :*> p <*: parseChar(')');
+
+match runParser(parseParens(someParser(parseChar('a'))), "(aa)ba!there") with
+    Pair(rest, Left(err)) -> print(showParserError(err) ++ "\nRest: " ++ rest ++ "\n"),
+    Pair(rest, Right(res)) -> print("Parsed: " ++ res ++ "\nRest: " ++ rest ++ "\n");
+    // BUG ABOVE: print(res ++ "\n"...) will typecheck, even if res is a char
