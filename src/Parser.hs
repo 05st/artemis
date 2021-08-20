@@ -194,8 +194,8 @@ function = do
 desugarList :: [UExpr] -> Parser UExpr
 desugarList exprs = do
     case exprs of
-        [] -> return $ EIdent () (Qualified Global "Empty")
-        _ -> return $ foldr (ECall () . ECall () (EIdent () (Qualified (Relative Global "std") "Cons"))) (EIdent () (Qualified Global "Empty")) exprs
+        [] -> return $ EIdent () (Qualified (Relative Global "std") "Empty")
+        _ -> return $ foldr (ECall () . ECall () (EIdent () (Qualified (Relative Global "std") "Cons"))) (EIdent () (Qualified (Relative Global "std") "Empty")) exprs
 
 -- Regular list syntax sugar [e1, e2, e3]
 list :: Parser UExpr

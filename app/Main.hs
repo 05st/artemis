@@ -26,12 +26,3 @@ main = do
         Right program -> case annotate (resolve program) of
             Left err -> print err
             Right annotated -> interpret annotated
-
-{-
-    case parse input (takeBaseName file) of
-        Left err -> putStrLn err
-        Right program -> print (resolve program) >>
-            case annotate (resolve program) of
-                Left err -> print err
-                Right annotated -> interpret annotated
--}

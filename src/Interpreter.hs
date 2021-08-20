@@ -32,7 +32,7 @@ evalDecl = \case
         e <- get
         v' <- evalExpr v
         case v' of
-            VFunc (UserDef Nothing p b c) -> put (Map.insert id (VFunc (UserDef (Just id) p b c)) e)
+            VFunc (UserDef ns Nothing p b c) -> put (Map.insert id (VFunc (UserDef ns (Just id) p b c)) e)
             _ -> put (Map.insert id v' e)
     DData tc tps cs -> mapM_ valueConstructor cs
     DNamespace name decls imps -> do
@@ -66,7 +66,7 @@ evalExpr = \case
     EIdent _ name -> lookupEnv name
     EFunc _ p e -> do
         (ns, _) <- ask -- SHOULD BE RESOLVED ALREADY
-        gets (VFunc . UserDef Nothing (Qualified ns p) e)
+        gets (VFunc . UserDef ns Nothing (Qualified ns p) e)
     EIf _ c a b -> do
         c' <- evalExpr c
         let VBool cv = c'
@@ -86,12 +86,12 @@ evalExpr = \case
         a' <- evalExpr a
         let VFunc vf = f'
         case vf of
-            UserDef n p e c -> do
+            UserDef ns n p e c -> do
                 orig <- get
                 case n of
                     Just id -> put (Map.insert p a' (Map.insert id f' c))
                     Nothing -> put (Map.insert p a' c)
-                val <- evalExpr e
+                val <- local (\(_, _) -> (ns, [])) (evalExpr e)
                 put orig
                 return val
             BuiltIn n args f -> do
@@ -112,8 +112,8 @@ evalBlock (d : ds) = evalDecl d >> evalBlock ds
 evalBlock [] = error "No pass in block"
 
 checkPattern :: Value -> Pattern -> Bool
-checkPattern (VData dcon []) (PCon con []) = con == dcon
-checkPattern (VData dcon vs) (PCon con ps) = (con == dcon) && and [checkPattern v p | (v, p) <- zip vs ps]
+checkPattern (VData (Qualified _ dcon) []) (PCon (Qualified _ con) []) = con == dcon
+checkPattern (VData (Qualified _ dcon) vs) (PCon (Qualified _ con) ps) = (con == dcon) && and [checkPattern v p | (v, p) <- zip vs ps]
 checkPattern _ (PVar _) = True
 checkPattern v (PLit l) = v == evalLit l
 checkPattern _ _ = False

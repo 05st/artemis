@@ -1,6 +1,8 @@
 // Make sure to run with std.ar
 import std;
 
+print(concat("abc", "xyz"));
+
 let left = readFloat(input(()));
 let oper = match input(()) with
     Cons('+', Empty) -> addFloat,

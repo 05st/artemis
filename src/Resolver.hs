@@ -58,7 +58,7 @@ resolveExpr = \case
         return $ EIf t c' a' b'
     EMatch t e bs -> do
         e' <- resolveExpr e
-        bs' <- mapM (\(p, pe) -> (p,) <$> resolveExpr pe) bs
+        bs' <- mapM (\(p, pe) -> (,) <$> resolvePattern p <*> resolveExpr pe) bs
         return $ EMatch t e' bs'
     EBlock t ds -> EBlock t <$> mapM resolveDecl ds
     EBinary t o l r -> do
@@ -69,3 +69,8 @@ resolveExpr = \case
     EAssign t id e -> EAssign t <$> fixName id <*> resolveExpr e
     ECall t f a -> ECall t <$> resolveExpr f <*> resolveExpr a
     a@(ELit _ _) -> return a
+
+resolvePattern :: Pattern -> Resolve Pattern
+resolvePattern (PCon name ps) = PCon <$> fixName name <*> mapM resolvePattern ps
+resolvePattern (PLit l) = return $ PLit l
+resolvePattern (PVar v) = return $ PVar v
