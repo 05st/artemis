@@ -140,7 +140,7 @@ match = do
     branches <- sepBy1 ((,) <$> pattern <*> (reservedOp "->" *> expression)) comma
     return $ EMatch () expr branches
     where
-        pattern = try conPattern <|> litPattern <|> varPattern
+        pattern = (try conPattern <|> litPattern <|> varPattern) <* whitespace
         conPattern = PCon <$> (Qualified Global <$> dataIdentifier) <*> option [] (parens (sepBy1 pattern comma))
         varPattern = PVar <$> identifier
         litPattern = PLit <$> (int <|> float' <|> bool <|> char' <|> unit)

@@ -1,1 +1,11 @@
 import list;
+
+let (+) = addInt;
+let (-) = subInt;
+let (*) = mulInt;
+let (/) = divInt;
+
+let (+.) = addFloat;
+let (-.) = subFloat;
+let (*.) = mulFloat;
+let (/.) = divFloat;

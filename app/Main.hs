@@ -22,9 +22,17 @@ main :: IO ()
 main = do
     args <- getArgs
     let files = map takeBaseName args
+    putStrLn $ "Reading " ++ show files
     inputs <- mapM TextIO.readFile args
+    putStrLn $ "Parsing " ++ show files
     case parseFiles (zip files inputs) of
-        Left err -> putStrLn err
-        Right program -> case annotate (resolve program) of
-            Left err -> print err
-            Right annotated -> interpret annotated
+        Left err -> putStrLn $ "Parse Error: " ++ err
+        Right program -> do
+            putStrLn "Resolving names"
+            let resolved = resolve program
+            putStrLn "Inferring types"
+            case annotate resolved of
+                Left err -> putStrLn $ "Type Error: " ++ show err
+                Right annotated -> do
+                    putStrLn "Interpreting program"
+                    interpret annotated

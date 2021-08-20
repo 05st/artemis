@@ -158,14 +158,6 @@ annotateNamespace (d : ds) tds =
             put (e, Map.insert newns imps m, n)
             nds' <- local (const newns) (annotateNamespace nds [])
             annotateNamespace ds (DNamespace name nds' imps : tds)
-        {-
-            (ns, is, n) <- get
-            put (Relative ns name, imps, n)
-            ds' <- annotateNamespace nds []
-            (_, _, n') <- get
-            put (ns, is, n')
-            annotateNamespace ds (DNamespace name ds' is : tds)
-        -}
 
 annotateStmt :: UStmt -> Infer TStmt
 annotateStmt = \case
@@ -239,14 +231,6 @@ infer = \case
         ns <- ask -- SHOULD BE RESOLVED ALREADY
         let op' = Qualified ns op
         t2 <- lookupType op'
-        {-
-        t2 <- case op of
-            _ | op `elem` ["+", "-", "*", "/", "^"] -> return $ TInt :-> (TInt :-> TInt)
-            _ | op `elem` [">", "<", ">=", "<="] -> return $ TInt :-> (TInt :-> TBool)
-            _ | op `elem` ["==", "!="] -> return $ lt :-> (rt :-> TBool)
-            _ | op `elem` ["||", "&&"] -> return $ TBool :-> (TBool :-> TBool)
-            _ -> throwError $ UnknownOperator op
-        -}
         constrain $ t1 :~: t2
         return (ECall t (ECall (rt :-> t) (EIdent t2 op') l') r', t)--(EBinary t op l' r', t)
     EUnary _ op a -> do
@@ -255,12 +239,6 @@ infer = \case
         ns <- ask -- SHOULD BE RESOLVED ALREADY
         let op' = Qualified ns op
         ot <- lookupType op'
-        {-
-        ot <- case op of
-            "-" -> return $ TInt :-> TInt
-            "!" -> return $ TBool :-> TBool
-            _ -> throwError $ UnknownOperator op
-        -}
         constrain $ (at :-> t) :~: ot
         return (ECall t (EIdent ot op') a', t) -- (EUnary t op a', t)
     EAssign _ id r -> do

@@ -22,3 +22,5 @@ let concat : List<a> -> List<a> -> List<a>
     => match a with
         Cons(x, Empty) -> Cons(x, b),
         Cons(x, xs) -> Cons(x, concat(xs, b));
+
+let (++) = concat;
