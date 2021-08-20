@@ -26,7 +26,9 @@ divFloat [VFloat a, VFloat b] = return $ VFloat (a / b)
 fromInt [VInt a] = return $ VFloat (fromIntegral a)
 
 eqInt [VInt a, VInt b] = return $ VBool (a == b)
-neqInt [VInt a, VInt b] = return $ VBool (a /= b)
+eqFloat [VFloat a, VFloat b] = return $ VBool (a == b)
+eqBool [VBool a, VBool b] = return $ VBool (a == b)
+eqChar [VChar a, VChar b] = return $ VBool (a == b)
 
 showInt [VInt a] = return $ fromString (show a)
 showFloat [VFloat a] = return $ fromString (show a)
@@ -76,6 +78,9 @@ builtIns = [
         builtIn "fromInt" fromInt 1 [] (TInt :-> TFloat),
 
         builtIn "eqInt" eqInt 2 [] (TInt :-> (TInt :-> TBool)),
+        builtIn "eqFloat" eqFloat 2 [] (TFloat :-> (TFloat :-> TBool)),
+        builtIn "eqBool" eqBool 2 [] (TBool :-> (TBool :-> TBool)),
+        builtIn "eqChar" eqChar 2 [] (TChar :-> (TChar :-> TChar)),
 
         builtIn "showInt" showInt 1 [] (TInt :-> TList TChar),
         builtIn "showFloat" showFloat 1 [] (TFloat :-> TList TChar),

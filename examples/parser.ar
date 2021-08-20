@@ -1,6 +1,6 @@
-import std;
+import std; // list, either
 
-data ParserError = ExpectEncounter(char, char);
+data ParserError = ExpectEncounter(List<char>, List<char>);
 
 // Parser monad definition
 data Parser<a> = Parser(List<char> -> Pair<List<char>, Either<ParserError, a>>);
@@ -11,11 +11,64 @@ let runParser : Parser<a> -> List<char> -> Pair<List<char>, Either<ParserError, 
     => match p with
         Parser(f) -> f;
 
+// Parser is a functor
+let fmapParser : (a -> b) -> Parser<a> -> Parser<b>
+    = fn(f, p)
+    => {
+        let pfn
+            = fn(in)
+            => match runParser(p, in) with
+                Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+                Pair(rest, Right(parsed)) -> Pair(rest, Right(f(parsed)));
+        pass Parser(pfn);
+    };
+
 // Creates an instance of the parser monad
 let pureParser : a -> Parser<a>
     = fn(a)
     => Parser(fn(in) => Pair(in, Right(a)));
 
+// Parser is an applicative (along with pureParser)
+let applyParser : Parser<a -> b> -> Parser<a> -> Parser<b>
+    = fn(pf, p)
+    => {
+        let pfn
+            = fn(in)
+            => match runParser(pf, in) with
+                Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+                Pair(rest, Right(f)) ->
+                    match runParser(p, rest) with
+                        Pair(rest', Left(err')) -> Pair(rest', Left(err')),
+                        Pair(rest', Right(x)) -> Pair(rest', Right(f(x)));
+        pass Parser(pfn);
+    };
+
+// Parser is a monad
+let bindParser : Parser<a> -> (a -> Parser<b>) -> Parser<b>
+    = fn(p, f)
+    => {
+        let pfn
+            = fn(in)
+            => match runParser(p, in) with
+                Pair(rest, Left(err)) -> Pair(rest, Left(err)),
+                Pair(rest, Right(a)) ->
+                    match runParser (f(a), rest) with
+                        Pair(rest', Left(err')) -> Pair(rest', Left(err')),
+                        Pair(rest', Right(b)) -> Pair(rest', Right(b));
+        pass Parser(pfn);
+    };
+
 let parseAny : Parser<char>
     = Parser(fn(in) => Pair(tail(in), Right(head(in))));
+
+let parsePred : (char -> bool) -> List<char> -> Parser<char>
+    = fn(pred, desc)
+    => {
+        let check
+            = fn(c)
+            => if pred(c)
+                then pureParser(c)
+                else Parser(fn(in) => Pair(in, Left(ExpectEncounter(desc, Cons(c, Empty)))));
+        pass bindParser(parseAny, check);
+    };
 
