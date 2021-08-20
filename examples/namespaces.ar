@@ -1,3 +1,4 @@
+// Make sure you run this along with std.ar
 import std;
 
 namespace other {

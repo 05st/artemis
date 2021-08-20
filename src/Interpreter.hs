@@ -113,7 +113,7 @@ evalBlock [] = error "No pass in block"
 
 checkPattern :: Value -> Pattern -> Bool
 checkPattern (VData dcon []) (PCon con []) = con == dcon
-checkPattern (VData dcon vs) (PCon con ps) = (con == dcon) && or [checkPattern v p | (v, p) <- zip vs ps]
+checkPattern (VData dcon vs) (PCon con ps) = (con == dcon) && and [checkPattern v p | (v, p) <- zip vs ps]
 checkPattern _ (PVar _) = True
 checkPattern v (PLit l) = v == evalLit l
 checkPattern _ _ = False
