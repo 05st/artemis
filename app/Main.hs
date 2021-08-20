@@ -25,7 +25,7 @@ main = do
         Left err -> putStrLn err
         Right program -> case annotate (resolve program) of
             Left err -> print err
-            Right annotated -> print annotated
+            Right annotated -> interpret annotated
 
 {-
     case parse input (takeBaseName file) of

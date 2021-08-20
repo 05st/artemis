@@ -1,6 +1,6 @@
 # Artemis
 
-Artemis is a statically typed, functional programming language with some inspirations from Rust, ML, Haskell. It doesn't have too many exciting features as I am writing it for learning purposes.
+Artemis is a statically typed, functional programming language with some inspirations from Rust, ML, and Haskell. It doesn't have too many exciting features as I am writing it for learning purposes.
 
 ## Features
 At the moment, Artemis has all of these implemented:

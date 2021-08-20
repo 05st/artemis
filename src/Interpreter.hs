@@ -1,12 +1,11 @@
-{-# OPTIONS_GHC -fdefer-type-errors #-}
 {-# Language LambdaCase #-}
 
 module Interpreter (interpret) where
 
 import qualified Data.Map as Map
 
+import Control.Monad.Reader
 import Control.Monad.State
-import Data.Functor
 
 import System.IO
 
@@ -16,27 +15,31 @@ import AST
 import Type
 import Value
 import BuiltIn
+import Name
 
-type Interpret = StateT Env IO
+type Interpret a = ReaderT (Namespace, [Namespace]) (StateT Env IO) a
 
 interpret :: TProgram -> IO ()
-interpret (Program ds) = evalStateT (evalProgram ds) defEnv
+interpret (Program ds) = evalStateT (runReaderT (evalProgram ds) (Global, [])) defEnv
 
-evalProgram :: [TDecl] -> StateT Env IO ()
+evalProgram :: [TDecl] -> Interpret ()
 evalProgram = foldr ((>>) . evalDecl) (return ())
 
 evalDecl :: TDecl -> Interpret ()
 evalDecl = \case
     DStmt s -> evalStmt s
     DVar _ _ id v -> do
-        e <- undefined --get
+        e <- get
         v' <- evalExpr v
         case v' of
-            VFunc (UserDef Nothing p b c) -> put undefined --(Map.insert id (VFunc (UserDef (Just id) p b c)) e)
-            _ -> put undefined --(Map.insert id v' e)
+            VFunc (UserDef Nothing p b c) -> put (Map.insert id (VFunc (UserDef (Just id) p b c)) e)
+            _ -> put (Map.insert id v' e)
     DData tc tps cs -> mapM_ valueConstructor cs
+    DNamespace name decls imps -> do
+        (ns, _) <- ask
+        local (const (Relative ns name, imps)) (foldr ((>>) . evalDecl) (return ()) decls)
 
-valueConstructor :: (String, [Type]) -> Interpret ()
+valueConstructor :: (QualifiedName, [Type]) -> Interpret ()
 valueConstructor (vc, vts) = do
     env <- get
     let arity = length vts
@@ -60,12 +63,10 @@ evalLit = \case
 evalExpr :: TExpr -> Interpret Value
 evalExpr = \case
     ELit _ l -> return $ evalLit l
-    EIdent _ id -> do
-        env <- get
-        case Map.lookup id env of
-            Just v -> return v
-            Nothing -> error $ "Undefined " ++ id ++ "\n\n" ++ show env
-    EFunc _ p e -> get <&> VFunc . UserDef Nothing p e
+    EIdent _ name -> lookupEnv name
+    EFunc _ p e -> do
+        (ns, _) <- ask -- SHOULD BE RESOLVED ALREADY
+        gets (VFunc . UserDef Nothing (Qualified ns p) e)
     EIf _ c a b -> do
         c' <- evalExpr c
         let VBool cv = c'
@@ -118,6 +119,37 @@ checkPattern v (PLit l) = v == evalLit l
 checkPattern _ _ = False
 
 setPatternVars :: Value -> Pattern -> Interpret ()
-setPatternVars val (PVar var) = get >>= put . Map.insert var val
+setPatternVars val (PVar var) = do
+    (ns, _) <- ask
+    get >>= put . Map.insert (Qualified ns var) val
 setPatternVars (VData dcon vs) (PCon con ps) = sequence_ [setPatternVars v p | (v, p) <- zip vs ps]
 setPatternVars _ _ = return ()
+
+------------
+-- Lookup --
+------------
+
+lookupEnv :: QualifiedName -> Interpret Value
+lookupEnv name = do
+    res <- lookupEnv' name name
+    case res of
+        Nothing -> error $ "Undefined " ++ show name
+        Just res' -> return res'
+
+lookupEnv' :: QualifiedName -> QualifiedName -> Interpret (Maybe Value)
+lookupEnv' name orig = do
+    env <- get
+    case Map.lookup name env of
+        Just x -> return (Just x)
+        Nothing -> case name of
+            (Qualified Global _) -> ask >>= \(_, imps) -> lookupImports imps orig
+            (Qualified (Relative parent _) s) -> lookupEnv' (Qualified parent s) orig
+
+lookupImports :: [Namespace] -> QualifiedName -> Interpret (Maybe Value)
+lookupImports [] _ = return Nothing
+lookupImports (i : is) name@(Qualified ns s) = do
+    let name' = Qualified i s
+    res <- local (const (i, [])) (lookupEnv' name' name')
+    case res of
+        Just _ -> return res
+        Nothing -> lookupImports is name

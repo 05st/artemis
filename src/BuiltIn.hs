@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fdefer-type-errors #-}
-
 module BuiltIn (defTEnv, defEnv) where
 
 import Data.Functor
@@ -49,13 +47,13 @@ input [a] = getLine <&> fromString
 -- Helper function
 -- Turns a List<char> into a Haskell [Char]
 toString :: Value -> String
-toString (VData "Elem" [VChar c, n]) = c : toString n
-toString (VData "Empty" []) = []
+toString (VData (Qualified _ "Elem") [VChar c, n]) = c : toString n
+toString (VData (Qualified _"Empty") []) = []
 toString _ = error "Not possible"
 
 fromString :: String -> Value
-fromString (c : cs) = VData "Elem" [VChar c, fromString cs]
-fromString [] = VData "Empty" []
+fromString (c : cs) = VData (Qualified Global "Elem") [VChar c, fromString cs]
+fromString [] = VData (Qualified Global "Empty") []
 
 builtIn :: String -> ([Value] -> IO Value) -> Int -> [TVar] -> Type -> (String, Value, Scheme, Bool)
 builtIn name fn arity vs t = (name, VFunc (BuiltIn arity [] fn), Forall (Set.fromList vs) t, False)

@@ -1,16 +1,25 @@
 data List<a> = Elem(a, List<a>) | Empty;
 
 namespace other {
-    let test = 124;
+    let test = "abc";
 }
 
 namespace other2 {
     import namespaces::other;
     let test2 = test;
+    namespace abc {
+         let factorial : int -> int
+            = fn(n)
+            => if eqInt(n, 1)
+                then 1
+                else mulInt(n, factorial(subInt(n, 1)));
+    }
 }
 
 namespace next {
-    import namespaces::other2;
+    import namespaces::other2::abc;
     let anotherTest = test2;
+    print(showInt(factorial(10)));
+    print("\n");
 }
 

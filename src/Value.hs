@@ -7,8 +7,8 @@ import Name
 
 type Env = Map.Map QualifiedName Value
 
-data VFunc = UserDef (Maybe QualifiedName) String TExpr Env | BuiltIn Int [Value] ([Value] -> IO Value)
-data Value = VInt Integer | VFloat Double | VBool Bool | VChar Char | VUnit | VFunc VFunc | VData String [Value] deriving (Show, Eq)
+data VFunc = UserDef (Maybe QualifiedName) QualifiedName TExpr Env | BuiltIn Int [Value] ([Value] -> IO Value)
+data Value = VInt Integer | VFloat Double | VBool Bool | VChar Char | VUnit | VFunc VFunc | VData QualifiedName [Value] deriving (Show, Eq)
 
 instance Show VFunc where
     show = const "func"
