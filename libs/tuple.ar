@@ -1,0 +1,18 @@
+// Definitions of tuple types
+data Pair<a, b> = Pair(a, b);
+data Tuple3<a, b, c> = Tuple3(a, b, c);
+data Tuple4<a, b, c, d> = Tuple4(a, b, c, d);
+data Tuple5<a, b, c, d, e> = Tuple5(a, b, c, d, e);
+
+// Gets the first element in a Pair
+let fst : Pair<a, b> -> a
+    = fn(p)
+    => match p with
+        Pair(a, b) -> a;
+
+// Gets the second element in a Pair
+let snd : Pair<a, b> -> b
+    = fn(p)
+    => match p with
+        Pair(a, b) -> b;
+

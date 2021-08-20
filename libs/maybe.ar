@@ -1,0 +1,19 @@
+import list;
+
+data Maybe<a> = Some(a) | None;
+
+// Takes a default value, if the Maybe is None, evaluates to that.
+// Otherwise, evaluates to the value inside the Maybe.
+let fromMaybe : a -> Maybe<a> -> a
+    = fn(a, m)
+    => match m with
+        Some(x) -> x,
+        None -> a;
+
+// Attempts to unwrap a Maybe. If it is None, throws an error.
+let unwrapMaybe : Maybe<a> -> a
+    = fn(m)
+    => match m with
+        Some(x) -> x,
+        None -> error("maybe::unwrapMaybe None");
+

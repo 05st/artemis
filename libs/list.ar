@@ -24,3 +24,4 @@ let concat : List<a> -> List<a> -> List<a>
         Cons(x, xs) -> Cons(x, concat(xs, b));
 
 let (++) = concat;
+

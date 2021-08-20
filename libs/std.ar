@@ -1,4 +1,7 @@
 import list;
+import maybe;
+import either;
+import tuple;
 
 let (+) = addInt;
 let (-) = subInt;
@@ -9,3 +12,4 @@ let (+.) = addFloat;
 let (-.) = subFloat;
 let (*.) = mulFloat;
 let (/.) = divFloat;
+
