@@ -47,12 +47,12 @@ input [a] = getLine <&> fromString
 -- Helper function
 -- Turns a List<char> into a Haskell [Char]
 toString :: Value -> String
-toString (VData (Qualified _ "Elem") [VChar c, n]) = c : toString n
+toString (VData (Qualified _ "Cons") [VChar c, n]) = c : toString n
 toString (VData (Qualified _"Empty") []) = []
 toString _ = error "Not possible"
 
 fromString :: String -> Value
-fromString (c : cs) = VData (Qualified Global "Elem") [VChar c, fromString cs]
+fromString (c : cs) = VData (Qualified Global "Cons") [VChar c, fromString cs]
 fromString [] = VData (Qualified Global "Empty") []
 
 builtIn :: String -> ([Value] -> IO Value) -> Int -> [TVar] -> Type -> (String, Value, Scheme, Bool)

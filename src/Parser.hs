@@ -1,12 +1,14 @@
+{-# Language TupleSections #-}
+
 module Parser (Parser.parse) where
 
-import Data.Functor
-import Data.Functor.Identity
+import Control.Monad.Reader
 import qualified Data.Text as Text
+
+import Data.List (nub)
 
 import Text.Parsec
 import Text.Parsec.Expr
-import Text.Parsec.Text (Parser)
 import Text.Parsec.Language
 
 import Debug.Trace
@@ -16,13 +18,18 @@ import AST
 import Type
 import Name
 
+type Parser a = ParsecT Text.Text () (Reader [Namespace]) a
+
 -------------
 -- Program --
 -------------
 
 module' :: String -> Parser UDecl
 module' file = do
-    (is, ds) <- whitespace *> ((,) <$> imports <*> many declaration) <* whitespace <* eof
+    whitespace
+    is <- imports
+    ds <- local (is++) (many declaration)
+    whitespace *> eof
     return $ DNamespace file ds is
 
 ------------------
@@ -62,8 +69,9 @@ namespaceDecl :: Parser UDecl
 namespaceDecl = do
     reserved "namespace"
     id <- identifier
-    (is, ds) <- braces ((,) <$> imports <*> many declaration)
-    return $ DNamespace id ds is
+    (imps, ds) <- braces (do is <- imports ; (is,) <$> local (is++) (many declaration))
+    imps' <- ask
+    return $ DNamespace id ds (nub $ imps' ++ imps)
 
 imports :: Parser [Namespace]
 imports = many (reserved "import" *> namespace <* semi)
@@ -82,7 +90,7 @@ passStmt = SPass <$> (reserved "pass" *> expression <* semi)
 -- Expressions --
 -----------------
 
-opTable :: OperatorTable Text.Text () Identity UExpr
+opTable :: OperatorTable Text.Text () (Reader [Namespace]) UExpr
 opTable = 
     [[prefixOp "-", prefixOp "!"],
     -- [postfixOp "?"],
@@ -98,8 +106,8 @@ opTable =
         infixOp op = Infix (reservedOp op >> return (EBinary () op))
         postfixOp op = Postfix (reservedOp op >> return (EUnary () op))
 
-userPrefix = Prefix (operator <&> EUnary ())
-userInfix = Infix (operator <&> EBinary ()) AssocLeft
+userPrefix = Prefix (EUnary () <$> operator)
+userInfix = Infix (EBinary () <$> operator) AssocLeft
 
 expression :: Parser UExpr
 expression = buildExpressionParser (opTable ++ [[userPrefix], [userInfix]]) term
@@ -178,16 +186,16 @@ function = do
     expr <- expression
     return $ foldr (EFunc ()) (EFunc () (last params) expr) (init params)
 
--- Desugars a list of expressions into calls to Elem() and Empty
+-- Desugars a list of expressions into calls to Cons() and Empty
 -- [e1, e2, e3, e4]
--- [ECall "Elem" e1, ECall "Elem" e2, ECall "Elem" e3, ECall "Elem" e4]
--- [ECall (ECall "Elem" e1), ECall (ECall "Elem" e2), ECall (ECall "Elem" e3), ECall (ECall "Elem" e4)]
+-- [ECall "Cons" e1, ECall "Cons" e2, ECall "Cons" e3, ECall "Cons" e4]
+-- [ECall (ECall "Cons" e1), ECall (ECall "Cons" e2), ECall (ECall "Cons" e3), ECall (ECall "Cons" e4)]
 -- then foldr into a single expression
 desugarList :: [UExpr] -> Parser UExpr
 desugarList exprs = do
     case exprs of
         [] -> return $ EIdent () (Qualified Global "Empty")
-        _ -> return $ foldr (ECall () . ECall () (EIdent () (Qualified Global "Elem"))) (EIdent () (Qualified Global "Empty")) exprs
+        _ -> return $ foldr (ECall () . ECall () (EIdent () (Qualified (Relative Global "std") "Cons"))) (EIdent () (Qualified Global "Empty")) exprs
 
 -- Regular list syntax sugar [e1, e2, e3]
 list :: Parser UExpr
@@ -253,6 +261,6 @@ namespace = do
 
 parse :: Text.Text -> String -> Either String UDecl
 parse input file =
-    case Text.Parsec.parse (module' file) file input of
+    case runReader (runParserT (module' file) () file input) [] of
         Left err -> Left $ show err
         Right decls -> {- trace (show decls) $ -} Right decls

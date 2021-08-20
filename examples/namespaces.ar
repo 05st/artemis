@@ -1,4 +1,4 @@
-data List<a> = Elem(a, List<a>) | Empty;
+import std;
 
 namespace other {
     let test = "abc";

@@ -2,11 +2,13 @@
 
 module Lexer where
 
-import Data.Functor.Identity
+import Control.Monad.Reader
 import qualified Data.Text as Text
 
 import Text.Parsec
 import qualified Text.Parsec.Token as Token
+
+import Name
 
 -----------
 -- Lexer --
@@ -15,7 +17,7 @@ import qualified Text.Parsec.Token as Token
 defOps :: [String]
 defOps = ["+", "-", "*", "/", "^", "=", "==", "!=", ">", ">=", "<", "<=", "!", "&&", "||"] 
 
-lexer :: Token.GenTokenParser Text.Text () Identity
+lexer :: Token.GenTokenParser Text.Text () (Reader [Namespace])
 lexer = Token.makeTokenParser $ Token.LanguageDef
     { Token.commentStart = "/*"
     , Token.commentEnd = "*/"
