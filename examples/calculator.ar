@@ -8,21 +8,34 @@ let showExpr : Expr -> List<char>
     = fn(expr)
     => match expr with
         Num(n) -> showFloat(n),
-        Infix(op, l, r) -> "(" ++ showExpr(l) ++ Cons(op, Empty) ++ showExpr(r) ++ ")",
-        Prefix(op, a) -> "(" ++ Cons(op, Empty) ++ showExpr(a) ++ ")",
+        Infix(op, l, r) -> "(" ++ showExpr(l) ++ [op] ++ showExpr(r) ++ ")",
+        Prefix(op, a) -> "(" ++ [op] ++ showExpr(a) ++ ")",
         Func(f, args) -> f ++ "(" ++ intercalate(",", map(showExpr, args)) ++ ")";
 
 // Parser
 let parseNum : Parser<Expr>
     = fmapParser(Num . readFloat, manyParser $ parsePred(isDigit, "digit"));
 
-let parseExpr : Parser<Expr>
-    = parseNum;
+// Welp, we need to support mutual recursion before the calculator can be finished
+let parseValue : Parser<Expr>
+    = parseNum <|> parseParens(parseTerm);
 
-println(showExpr(Func("sin", [Num(420.0)])));
+let parseFactor : Parser<Expr>
+    = bindParser(parseValue)
+    $ fn(l) => bindParser(parseChar('*') <|> parseChar('/'))
+    $ fn(op) => bindParser(parseFactor)
+    $ fn(r) => pureParser(Infix(op, l, r));
+
+let parseTerm : Parser<Expr>
+    = bindParser(parseFactor)
+    $ fn(l) => bindParser(parseChar('+') <|> parseChar('-'))
+    $ fn(op) => bindParser(parseTerm)
+    $ fn(r) => pureParser(Infix(op, l, r));
 
 let parse : List<char> -> Expr
     = fn(input)
-    => match runParser(parseExpr, input) with
+    => match runParser(parseTerm, input) with
         Pair(r_, Left(err)) -> error(showParserError(err)),
         Pair(r_, Right(expr)) -> expr;
+
+println . showExpr . parse . input $ ();
