@@ -5,8 +5,7 @@ import parser;
 data Expr = Num(float) | Infix(char, Expr, Expr) | Prefix(char, Expr) | Func(List<char>, List<Expr>);
 
 let showExpr : Expr -> List<char>
-    = fn(expr)
-    => match expr with
+    = fnmatch
         Num(n) -> showFloat(n),
         Infix(op, l, r) -> "(" ++ showExpr(l) ++ [op] ++ showExpr(r) ++ ")",
         Prefix(op, a) -> "(" ++ [op] ++ showExpr(a) ++ ")",

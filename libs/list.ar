@@ -27,8 +27,7 @@ let (++) = join;
 
 // Concatenates a list of lists.
 let concat : List<List<a>> -> List<a>
-    = fn(list)
-    => match list with
+    = fnmatch
         Cons(x, xs) -> x ++ concat(xs),
         Empty -> Empty;
 
@@ -47,15 +46,13 @@ let intercalate : List<a> -> List<List<a>> -> List<a>
 
 // Extracts first element of list, if empty throw an error.
 let head : List<a> -> a
-    = fn(l)
-    => match l with
+    = fnmatch
         Cons(x, l_) -> x,
         Empty -> error("list::head Empty");
 
 // Returns entire list except first element. If empty, throws an error.
 let tail : List<a> -> List<a>
-    = fn(l)
-    => match l with
+    = fnmatch
         Cons(x_, tail) -> tail,
         Empty -> error("list::tail Empty");
 

@@ -4,8 +4,7 @@ import maybe;
 data Either<a, b> = Left(a) | Right(b);
 
 let leftToMaybe : Either<a, b> -> Maybe<a>
-    = fn(e)
-    => match e with
+    = fnmatch
         Left(a) -> Some(a),
         Right(b_) -> None;
 

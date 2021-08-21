@@ -19,6 +19,7 @@ At the moment, Artemis has all of these implemented:
 
 ## Planned
 It would be great to have these implemented eventually:
+- Support for mutually recursive functions
 - Typeclasses (for ad-hoc polymorphism)
 - Exhaustiveness/redundancy checking for pattern matching
 - An improved standard library

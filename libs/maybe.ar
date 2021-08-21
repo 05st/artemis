@@ -12,8 +12,7 @@ let fromMaybe : a -> Maybe<a> -> a
 
 // Attempts to unwrap a Maybe. If it is None, throws an error.
 let unwrapMaybe : Maybe<a> -> a
-    = fn(m)
-    => match m with
+    = fnmatch
         Some(x) -> x,
         None -> error("maybe::unwrapMaybe None");
 

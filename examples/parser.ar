@@ -5,8 +5,7 @@ import std; // uses list, tuple, either
 data ParserError = ExpectEncounter(List<char>, List<char>);
 
 let showParserError : ParserError -> List<char>
-    = fn(err)
-    => match err with
+    = fnmatch
         ExpectEncounter(expect, encounter) -> "Expected: " ++ expect ++ "; encountered: " ++ encounter ++ ".";
 
 // Parser monad definition
@@ -14,8 +13,7 @@ data Parser<a> = Parser(List<char> -> Pair<List<char>, Either<ParserError, a>>);
 
 // Extracts parser function
 let runParser : Parser<a> -> List<char> -> Pair<List<char>, Either<ParserError, a>>
-    = fn(p)
-    => match p with
+    = fnmatch
         Parser(f) -> f;
 
 // Parser is a functor

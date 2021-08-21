@@ -1,0 +1,23 @@
+import std;
+
+// Artemis supports pattern matching:
+let num = readInt(input(()));
+
+match num with
+    0 -> println("I matched 0"), // You can match literals or value constructors
+    1 -> println("I matched 1"),
+    x -> println(showInt(x)); // Variables match anything
+
+// fnmatch acts as sugar for a function followed by match expressions
+// It also has a unique feature, it can match all of the parameters at once
+// Under the hood, it is desugared into a bunch of nested match expressions.
+
+// The following function takes two bools and checks if both are true.
+// Obviously, this is only used for demonstrating the functionality
+// of fnmatch.
+let areBothTrue : bool -> bool -> List<char>
+    = fnmatch
+        true, true -> "Yes, they're both true",
+        false, false -> "No, they're both false",
+        x, y -> "They aren't the same";
+
