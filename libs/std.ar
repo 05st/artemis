@@ -13,3 +13,16 @@ let (-.) = subFloat;
 let (*.) = mulFloat;
 let (/.) = divFloat;
 
+let isDigit : char -> bool
+    = fn(c)
+    => leqInt(ordChar(c) - ordChar('0'), 7);
+
+let ($) : (a -> b) -> a -> b
+    = fn(f, a) => f(a);
+
+let (.) : (b -> c) -> (a -> b) -> (a -> c)
+    = fn(f, g, x) => f(g(x));
+
+let println : List<char> -> ()
+    = fn(out) => print(out ++ "\n");
+

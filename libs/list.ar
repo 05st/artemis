@@ -17,13 +17,33 @@ let fold : (a -> b -> b) -> b -> List<a> -> b
         Empty -> a;
 
 // Joins (concatenates) two lists.
-let concat : List<a> -> List<a> -> List<a>
+let join : List<a> -> List<a> -> List<a>
     = fn(a, b)
     => match a with
         Cons(x, Empty) -> Cons(x, b),
-        Cons(x, xs) -> Cons(x, concat(xs, b));
+        Cons(x, xs) -> Cons(x, join(xs, b));
 
-let (++) = concat;
+let (++) = join;
+
+// Concatenates a list of lists.
+let concat : List<List<a>> -> List<a>
+    = fn(list)
+    => match list with
+        Cons(x, xs) -> x ++ concat(xs),
+        Empty -> Empty;
+
+// Adds 'a' in between each element of list.
+let intersperse : a -> List<a> -> List<a>
+    = fn(a, list)
+    => match list with
+        Cons(x, Empty) -> Cons(x, Empty),
+        Cons(x, xs) -> Cons(x, Cons(a, intersperse(a, xs))),
+        Empty -> Empty;
+
+// Read definition of function for explanation
+let intercalate : List<a> -> List<List<a>> -> List<a>
+    = fn(a, list)
+    => concat(intersperse(a, list));
 
 // Extracts first element of list, if empty throw an error.
 let head : List<a> -> a

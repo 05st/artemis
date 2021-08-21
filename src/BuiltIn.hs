@@ -4,6 +4,7 @@ import Data.Functor
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
+import Data.Char
 import Data.Time
 import Data.Time.Clock.POSIX
 import System.IO
@@ -18,12 +19,13 @@ subInt [VInt a, VInt b] = return $ VInt (a - b)
 mulInt [VInt a, VInt b] = return $ VInt (a * b)
 divInt [VInt a, VInt b] = return $ VInt (a `div` b)
 floor' [VFloat a] = return $ VInt (floor a)
+ordChar [VChar c] = return $ VInt (fromIntegral (ord c))
 
 addFloat [VFloat a, VFloat b] = return $ VFloat (a + b)
 subFloat [VFloat a, VFloat b] = return $ VFloat (a - b)
 mulFloat [VFloat a, VFloat b] = return $ VFloat (a * b)
 divFloat [VFloat a, VFloat b] = return $ VFloat (a / b)
-fromInt [VInt a] = return $ VFloat (fromIntegral a)
+intToFloat [VInt a] = return $ VFloat (fromIntegral a)
 
 eqInt [VInt a, VInt b] = return $ VBool (a == b)
 eqFloat [VFloat a, VFloat b] = return $ VBool (a == b)
@@ -72,12 +74,13 @@ builtIns = [
         builtIn "mulInt" mulInt 2 [] (TInt :-> (TInt :-> TInt)),
         builtIn "divInt" divInt 2 [] (TInt :-> (TInt :-> TInt)),
         builtIn "floor" floor' 1 [] (TFloat :-> TInt),
+        builtIn "ordChar" ordChar 1 [] (TChar :-> TInt),
 
         builtIn "addFloat" addFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
         builtIn "subFloat" subFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
         builtIn "mulFloat" mulFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
         builtIn "divFloat" divFloat 2 [] (TFloat :-> (TFloat :-> TFloat)),
-        builtIn "fromInt" fromInt 1 [] (TInt :-> TFloat),
+        builtIn "intToFloat" intToFloat 1 [] (TInt :-> TFloat),
 
         builtIn "eqInt" eqInt 2 [] (TInt :-> (TInt :-> TBool)),
         builtIn "leqInt" leqInt 2 [] (TInt :-> (TInt :-> TBool)),

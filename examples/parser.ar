@@ -1,6 +1,6 @@
 // This example demonstrates a very simple implementation of a parser combinator library in Artemis.
 
-import std; // list, either
+import std; // uses list, tuple, either
 
 data ParserError = ExpectEncounter(List<char>, List<char>);
 
@@ -136,7 +136,9 @@ let parseString : List<char> -> Parser<List<char>>
 let parseParens : Parser<a> -> Parser<a>
     = fn(p) => parseChar('(') :*> p <*: parseChar(')');
 
+/*
 match runParser(parseParens(someParser(parseChar('a'))), "(aa)ba!there") with
     Pair(rest, Left(err)) -> print(showParserError(err) ++ "\nRest: " ++ rest ++ "\n"),
     Pair(rest, Right(res)) -> print("Parsed: " ++ res ++ "\nRest: " ++ rest ++ "\n");
     // FIXME: BUG ABOVE print(res ++ "\n"...) will int typecheck, even if res is a char
+*/

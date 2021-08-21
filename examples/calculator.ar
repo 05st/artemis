@@ -1,0 +1,28 @@
+import std; // Redundant import, parser already imports std
+import parser;
+
+// Expression data type
+data Expr = Num(float) | Infix(char, Expr, Expr) | Prefix(char, Expr) | Func(List<char>, List<Expr>);
+
+let showExpr : Expr -> List<char>
+    = fn(expr)
+    => match expr with
+        Num(n) -> showFloat(n),
+        Infix(op, l, r) -> "(" ++ showExpr(l) ++ Cons(op, Empty) ++ showExpr(r) ++ ")",
+        Prefix(op, a) -> "(" ++ Cons(op, Empty) ++ showExpr(a) ++ ")",
+        Func(f, args) -> f ++ "(" ++ intercalate(",", map(showExpr, args)) ++ ")";
+
+// Parser
+let parseNum : Parser<Expr>
+    = fmapParser(Num . readFloat, manyParser $ parsePred(isDigit, "digit"));
+
+let parseExpr : Parser<Expr>
+    = parseNum;
+
+println(showExpr(Func("sin", [Num(420.0)])));
+
+let parse : List<char> -> Expr
+    = fn(input)
+    => match runParser(parseExpr, input) with
+        Pair(r_, Left(err)) -> error(showParserError(err)),
+        Pair(r_, Right(expr)) -> expr;

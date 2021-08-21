@@ -31,8 +31,8 @@ instance Show Type where
     show = \case
         TVar tv -> show tv
         a :-> b -> '(':show a ++ " -> " ++ show b ++ ")"
-        TCon c [] -> show c
-        TCon c ts -> show c ++ '<':intercalate ", " (Prelude.map show ts) ++ ">"
+        TCon (Qualified _ c) [] -> c
+        TCon (Qualified _ c) ts -> c ++ '<':intercalate ", " (Prelude.map show ts) ++ ">"
 
 instance Show TVar where
     show (TV s _) = s
