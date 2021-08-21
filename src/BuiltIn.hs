@@ -30,6 +30,8 @@ eqFloat [VFloat a, VFloat b] = return $ VBool (a == b)
 eqBool [VBool a, VBool b] = return $ VBool (a == b)
 eqChar [VChar a, VChar b] = return $ VBool (a == b)
 
+leqInt [VInt a, VInt b] = return $ VBool (a <= b)
+
 showInt [VInt a] = return $ fromString (show a)
 showFloat [VFloat a] = return $ fromString (show a)
 showBool [VBool a] = return $ fromString $ if a then "true" else "false"
@@ -78,6 +80,8 @@ builtIns = [
         builtIn "fromInt" fromInt 1 [] (TInt :-> TFloat),
 
         builtIn "eqInt" eqInt 2 [] (TInt :-> (TInt :-> TBool)),
+        builtIn "leqInt" leqInt 2 [] (TInt :-> (TInt :-> TBool)),
+
         builtIn "eqFloat" eqFloat 2 [] (TFloat :-> (TFloat :-> TBool)),
         builtIn "eqBool" eqBool 2 [] (TBool :-> (TBool :-> TBool)),
         builtIn "eqChar" eqChar 2 [] (TChar :-> (TChar :-> TBool)),
