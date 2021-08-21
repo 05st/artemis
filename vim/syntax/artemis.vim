@@ -8,7 +8,7 @@ if exists("b:current_syntax")
 endif
 
 " Keywords
-syn keyword Keyword let fn data import namespace mut
+syn keyword Keyword let fn data import namespace mut fnmatch
 
 " Statements
 syn keyword Statement if then else match with

@@ -3,11 +3,12 @@
 module Parser (Parser.parse) where
 
 import Control.Monad.Reader
+import Control.Monad.State
 import qualified Data.Text as Text
 
 import Data.List (nub)
 
-import Text.Parsec
+import Text.Parsec hiding (State)
 import Text.Parsec.Expr
 import Text.Parsec.Language
 
@@ -166,15 +167,6 @@ match = do
     reserved "with"
     branches <- sepBy1 ((,) <$> pattern <*> (reservedOp "->" *> expression)) comma
     return $ EMatch () expr branches
-    where
-     -- pattern :: Parser Pattern
-        pattern = (try conPattern <|> litPattern <|> varPattern) <* whitespace
-        -- Constructor pattern, used to match value constructors eg Pair(..., ...)
-        conPattern = PCon <$> (Qualified Global <$> dataIdentifier) <*> option [] (parens (sepBy1 pattern comma))
-        -- Variable pattern, matches anything
-        varPattern = PVar <$> identifier
-        -- Literal pattern, matches built-in literals
-        litPattern = PLit <$> (int <|> float' <|> bool <|> char' <|> unit)
 
 -- Assignment expression (abc = <expr>);
 assign :: Parser UExpr
@@ -221,18 +213,151 @@ ident = EIdent () <$> qualified identifier
 unit :: Parser Lit
 unit = LUnit <$ reserved "()"
 
--- Parses a function expression
--- Functions of multiple parameters automatically get desugared
+-- Parses a function expression (regular functions or fnmatches)
+-- Regular functions of multiple parameters automatically get desugared
 -- into functions of single parameters, i.e. automatically curries them
 -- For example, fn(a, b, c) => <expr>
 -- gets desugared into: fn(a) => fn(b) => fn(c) => <expr>;
 function :: Parser UExpr
-function = do
+function = fnmatch <|> do
     reserved "fn"
     params <- parens (sepBy1 identifier comma) <?> "parameter"
     reservedOp "=>"
     expr <- expression
     return $ foldr (EFunc ()) (EFunc () (last params) expr) (init params)
+
+-- Desugars a fnmatch statement into a chain of fn(_) expressions followed by a system
+-- of match expressions. The arity is determined by the number of patterns.
+-- Example:
+-- fnmatch
+--     Test(a), Pat1(b) -> <expr>,
+--     Test(a), pvar -> <expr>,
+--     xy, Pat2(x, y) -> <expr>,
+--     Test(b), Pat1(b) -> <expr>
+-- desugars into:
+-- fn(_a) => fn(_b) =>
+--     (match _a with
+--         Test(a) -> (match b with
+--             Pat1(b) -> <expr>,
+--             pvar -> <expr>),
+--         xy -> (match b with
+--             Pat2(x, y) -> <expr>))
+fnmatch :: Parser UExpr
+fnmatch = do
+    reserved "fnmatch"
+    branches <- sepBy1 parseBranch comma
+    let depths@(arity : _) = map branchDepth branches
+    if all (== arity) depths
+        then do
+            let expr = constructMatch . groupAll $ branches
+            let (expr', n) = runState (fillMatchExpr "_a" expr) 1
+            let params = take arity freeIdents
+            let fn = foldr (EFunc ()) (EFunc () (last params) expr') (init params)
+            return fn
+        else fail "all branches in fnmatch should be the same length"
+
+-- This function fills out the identifiers in the match expression 
+-- State monad keeps track of the index of the next identifier
+fillMatchExpr :: String -> UExpr -> State Int UExpr
+fillMatchExpr ident (EMatch t _ branches) = do
+    let (patterns, exprs) = unzip branches
+    nextIdent <- nextIdentifier -- fill all children match expressions with this identifier
+    exprs' <- traverse (fillMatchExpr nextIdent) exprs
+    let branches' = zip patterns exprs'
+    return $ EMatch t (EIdent () (Qualified Global ident)) branches'
+-- subtract 1 from state because we dont want to move up identifiers if it wasn't a match expression
+fillMatchExpr _ other = get >>= put . subtract 1 >> return other
+
+freeIdents :: [String]
+freeIdents = map ('_':) ([1..] >>= flip replicateM ['a'..'z']) 
+
+nextIdentifier :: State Int String
+nextIdentifier = do
+    n <- get
+    put (n+1)
+    return $ freeIdents !! n
+
+-- Branch is a helper data type
+-- Used in dealing with grouping the nested match expressions, for parsing fnmatches
+data Branch = Branch Pattern [Branch] | Expr Pattern UExpr deriving (Show)
+
+-- Used in figuring out the arity of the function desugared from fnmatches
+branchDepth :: Branch -> Int
+branchDepth (Expr _ _) = 1
+branchDepth (Branch _ (child : _)) = 1 + branchDepth child
+branchDepth _ = 0
+
+-- Helper function
+extractChilds :: Branch -> [Branch]
+extractChilds (Expr _ _) = []
+extractChilds (Branch _ childs) = childs
+
+-- Helper function
+checkBranch :: Pattern -> Branch -> Bool
+checkBranch pat (Expr pat' _) = pat == pat'
+checkBranch pat (Branch pat' _) = pat == pat'
+
+-- Parses a single branch under the fnmatch expression
+parseBranch :: Parser Branch
+parseBranch = try nested <|> expr
+    where
+        nested = do
+            pat <- pattern
+            comma
+            Branch pat . (:[]) <$> parseBranch
+        expr = do
+            pat <- pattern
+            reservedOp "->"
+            Expr pat <$> expression
+
+-- Constructs a match expression given a list of branch data types
+-- Done after "grouping" is done on the parsed branches
+constructMatch :: [Branch] -> UExpr
+constructMatch = EMatch () (EIdent () (Qualified Global "_")) . map constructMatch'
+-- The identifier in the match expression gets filled in afterwards, so "_" is used temporarily
+
+-- The main recursive function
+constructMatch' :: Branch -> (Pattern, UExpr)
+constructMatch' (Expr pat expr) = (pat, expr)
+constructMatch' (Branch pat childs) =
+    let match = constructMatch childs in (pat, match)
+
+-- (all functions related to "grouping" below are to do with desugaring fnmatch expressions)
+-- "Grouping" basically takes all consecutive branches with the same pattern,
+-- and unifies them under one branch.
+-- so instead of 
+-- fnmatch
+--     Pat1, Pat2 -> <expr>,
+--     Pat1, Pat3 -> <expr>
+-- turning to
+-- match _a with
+--     Pat1 -> match _b with
+--         Pat2 -> <expr>,
+--     Pat1 -> match _b with
+--         Pat3 -> <expr>
+-- (which is NOT what we want), it turns into
+-- match _a with
+--     Pat1 -> match _b with
+--         Pat2 -> <expr>,
+--         Pat3 -> <expr>
+groupAll :: [Branch] -> [Branch]
+groupAll = map groupChilds . groupBranches
+
+-- Recursively groups children of a branch
+groupChilds :: Branch -> Branch
+groupChilds (Branch pat childs) = Branch pat (map groupChilds (groupBranches childs))
+groupChilds other = other
+
+-- Groups consecutive branches which match the same pattern.
+-- It takes the first pattern as a reference, and puts all
+-- consecutive similar branches (sharing patterns) as a child of
+-- the reference branch.
+groupBranches :: [Branch] -> [Branch]
+groupBranches [] = []
+groupBranches (a@(Expr _ _) : rest) = a : groupBranches rest
+groupBranches (Branch pat childs : rest) =
+    let (samePatterns, rest') = span (checkBranch pat) rest
+    in Branch pat (childs ++ concatMap extractChilds samePatterns) : groupBranches rest'
 
 -- Desugars a list of expressions into calls to Cons() and Empty
 -- [e1, e2, e3, e4]
@@ -262,6 +387,25 @@ value = try function <|> try (ELit () <$> lit) <|> string' <|> ident <|> list
 -- Parses a literal
 lit :: Parser Lit
 lit = (try float' <|> try int) <|> bool <|> char' <|> unit
+
+--------------
+-- Patterns --
+--------------
+-- Parses a pattern
+pattern :: Parser Pattern
+pattern = (try conPattern <|> litPattern <|> varPattern) <* whitespace
+
+-- Constructor pattern, used to match value constructors eg Pair(..., ...)
+conPattern :: Parser Pattern
+conPattern = PCon <$> (Qualified Global <$> dataIdentifier) <*> option [] (parens (sepBy1 pattern comma))
+
+-- Variable pattern, matches anything
+varPattern :: Parser Pattern
+varPattern = PVar <$> identifier
+
+-- Literal pattern, matches built-in literals
+litPattern :: Parser Pattern
+litPattern = PLit <$> (int <|> float' <|> bool <|> char' <|> unit)
 
 -----------
 -- Types --

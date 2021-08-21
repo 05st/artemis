@@ -18,7 +18,7 @@ data Expr a = EIdent a QualifiedName | ELit a Lit | EFunc a String (Expr a)
             | EIf a (Expr a) (Expr a) (Expr a) | EMatch a (Expr a) [(Pattern, Expr a)] | EBlock a [Decl a]
             | EBinary a Oper (Expr a) (Expr a) | EUnary a Oper (Expr a) | EAssign a QualifiedName (Expr a) | ECall a (Expr a) (Expr a)
             deriving (Show, Functor)
-data Lit = LInt Integer | LFloat Double | LBool Bool | LChar Char | LUnit deriving (Show)
+data Lit = LInt Integer | LFloat Double | LBool Bool | LChar Char | LUnit deriving (Eq, Show)
 
 type UProgram = Program ()
 type UDecl = Decl ()
@@ -30,4 +30,4 @@ type TDecl = Decl Type
 type TStmt = Stmt Type
 type TExpr = Expr Type
 
-data Pattern = PVar String | PCon QualifiedName [Pattern] | PLit Lit deriving (Show)
+data Pattern = PVar String | PCon QualifiedName [Pattern] | PLit Lit deriving (Eq, Show)

@@ -27,7 +27,7 @@ lexer = Token.makeTokenParser $ Token.LanguageDef
     , Token.identLetter = alphaNum <|> oneOf "_'"
     , Token.opStart = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Token.opLetter =  oneOf ":!#$%&*+./<=>?@\\^|-~"
-    , Token.reservedNames = ["fn", "true", "false", "let", "mut", "pass", "int", "float", "bool", "char",
+    , Token.reservedNames = ["fn", "fnmatch", "true", "false", "let", "mut", "pass", "int", "float", "bool", "char",
                              "()", "void", "if", "then", "else", "match", "with", "data", "namespace", "import"]
     , Token.reservedOpNames = defOps ++ ["->", "=>", "|", "::"]
     , Token.caseSensitive = True }
