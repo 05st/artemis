@@ -224,7 +224,7 @@ function = fnmatch <|> do
     params <- parens (sepBy1 identifier comma) <?> "parameter"
     reservedOp "=>"
     expr <- expression
-    return $ foldr (EFunc ()) (EFunc () (last params) expr) (init params)
+    return $ foldr (EFunc ()) expr params
 
 -- Desugars a fnmatch statement into a chain of fn(_) expressions followed by a system
 -- of match expressions. The arity is determined by the number of patterns.
@@ -252,7 +252,7 @@ fnmatch = do
             let expr = constructMatch . groupAll $ branches
             let (expr', n) = runState (fillMatchExpr "_a" expr) 1
             let params = take arity freeIdents
-            let fn = foldr (EFunc ()) (EFunc () (last params) expr') (init params)
+            let fn = foldr (EFunc ()) expr' params
             return fn
         else fail "all branches in fnmatch should be the same length"
 
