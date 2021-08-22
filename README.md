@@ -15,11 +15,11 @@ At the moment, Artemis has all of these implemented:
 - Automatic currying/partial application
 - Immutable variables by default
 - Built-in functions/types
-- Recursive functions/types
+- Mutually recursive functions
+- Recursively defined types
 
 ## Planned
 It would be great to have these implemented eventually:
-- Support for mutually recursive functions
 - Typeclasses (for ad-hoc polymorphism)
 - Exhaustiveness/redundancy checking for pattern matching
 - An improved standard library
