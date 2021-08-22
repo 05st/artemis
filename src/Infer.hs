@@ -11,6 +11,7 @@ import Control.Monad.RWS
 import Data.Functor
 import Data.Functor.Identity
 import Data.Maybe
+import Data.Foldable
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -147,10 +148,7 @@ annotateNamespace (d : ds) tds =
     case d of
         DStmt s -> annotateStmt s >>= \s' -> annotateNamespace ds (DStmt s' : tds)
         DData tc tps vcs -> valueConstructors tc tps vcs *> annotateNamespace ds (DData tc tps vcs: tds)
-        DVar m _ id _ -> inferVarDecl d >>= \(td', sc) -> do
-            (env, impMap, n) <- get
-            put (Map.insert id (sc, m) (Map.delete id env), impMap, n)
-            annotateNamespace ds (td' : tds)
+        DVar decls -> inferVarDecls decls >>= annotateNamespace ds . (: tds) . DVar
         DNamespace name nds imps -> do
             ns <- ask
             (e, m, n) <- get
@@ -164,8 +162,34 @@ annotateStmt = \case
     SExpr e -> infer e <&> SExpr . fst
     SPass _ -> throwError GlobalPass
 
-inferVarDecl :: UDecl -> Infer (TDecl, Scheme)
-inferVarDecl (DVar m ta id e) = do
+inferVarDecl :: (Type, UDVar) -> Infer (TDVar, Scheme, Bool)
+inferVarDecl (tvar, DV isMut typeAnnotation name expr) = do
+    (env, _, _) <- get
+    ((expr', etype), consts) <- listen $ infer expr
+    subst <- liftEither $ runSolve consts
+    let etype' = apply subst etype
+        scheme = generalize env etype'
+    when (isJust typeAnnotation) (constrain $ fromJust typeAnnotation :~: etype')
+    constrain $ tvar :~: etype'
+    return (DV isMut typeAnnotation name expr', scheme, isMut)
+
+inferVarDecls :: [UDVar] -> Infer [TDVar]
+inferVarDecls dvars = do
+    let varNames = map varName dvars
+    tvars <- traverse (const fresh) dvars
+    let tvarSchemes = map (\tvar -> (Forall Set.empty tvar, False)) tvars
+    let envEntries = zip varNames tvarSchemes
+    (inferredVars, schemes, isMuts) <- unzip3 <$> scopedMany envEntries (traverse inferVarDecl (zip tvars dvars))
+    traverse_ (\(name, scheme, isMut) -> do
+        (env, imps, n) <- get
+        put (Map.insert name (scheme, isMut) (Map.delete name env), imps, n)) (zip3 varNames schemes isMuts)
+    return inferredVars
+    where
+        varName (DV _ _ name _) = name
+    
+{-
+inferVarDecls :: UDecl -> Infer (TDecl, Scheme)
+inferVarDecls (DVar m ta id e) = do
     (env, _, _) <- get
     recurType <- fresh
     ((e', t), c) <- listen $ scoped id (Forall Set.empty recurType, False) (infer e)
@@ -176,6 +200,7 @@ inferVarDecl (DVar m ta id e) = do
     constrain $ recurType :~: t'
     return (DVar m ta id e', sc)
 inferVarDecl _ = error "Not possible"
+-}
 
 inferBlock :: [UDecl] -> [TDecl] -> Infer ([TDecl], Type)
 inferBlock [] _ = throwError EmptyBlock
@@ -188,7 +213,7 @@ inferBlock (d : ds) tds =
             s' <- annotateStmt s
             inferBlock ds (DStmt s' : tds)
         DData {} -> throwError BlockData
-        DVar m _ id _ -> inferVarDecl d >>= \(td', sc) -> scoped id (sc, m) (inferBlock ds (td' : tds))
+        DVar decls -> inferVarDecls decls >>= inferBlock ds . (: tds) . DVar
         DNamespace {} -> throwError BlockNamespace
 
 inferLit :: Lit -> Infer (Lit, Type)

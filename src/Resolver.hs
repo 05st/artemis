@@ -34,17 +34,20 @@ resolveConstructor (name, ts) = (,ts) <$> fixName name
 
 resolveDecl :: UDecl -> Resolve UDecl
 resolveDecl = \case
-    DVar m t name e -> do
-        t' <- case t of 
-            Just ann -> Just <$> resolveType ann
-            Nothing -> return Nothing
-        DVar m t' <$> fixName name <*> resolveExpr e
+    DVar dvars -> DVar <$> traverse resolveDVar dvars
     DNamespace n ds i -> flip (DNamespace n) i <$> local (`Relative` n) (traverse resolveDecl ds)
     DData con tvs vcs -> do
         con' <- fixName con
         vcs' <- traverse resolveConstructor vcs
         return $ DData con' tvs vcs'
     DStmt s -> DStmt <$> resolveStmt s
+
+resolveDVar :: UDVar -> Resolve UDVar
+resolveDVar (DV m t name e) = do
+    t' <- case t of
+        Just ann -> Just <$> resolveType ann
+        Nothing -> return Nothing
+    DV m t' <$> fixName name <*> resolveExpr e
 
 resolveStmt :: UStmt -> Resolve UStmt
 resolveStmt = \case

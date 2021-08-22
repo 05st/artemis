@@ -23,7 +23,6 @@ import Name
 -- All imports from parent namespaces "propagate" down
 type Parser a = ParsecT Text.Text () (Reader [Namespace]) a
 
-
 ------------
 -- Module --
 ------------
@@ -45,19 +44,29 @@ module' file = do
 declaration :: Parser UDecl
 declaration = (DStmt <$> statement) <|> varDecl <|> dataDecl <|> namespaceDecl
 
--- Parse variable declaration (let x = <expr>;)
+-- Parse variable declaration (let x = <expr>;).
+-- Mutually recursive declarations are separated by "and"
+-- eg (let x = y; and y = x;)
 varDecl :: Parser UDecl
 varDecl = do
     reserved "let"
+    decls <- sepBy1 var (reserved "and")
+    return $ DVar decls
+
+-- Helper function for parsing each variable declaration
+-- separately.
+var :: Parser UDVar
+var = do
     isMut <- (True <$ reserved "mut") <|> (False <$ whitespace) -- if there is a 'mut' keyword following 'let', it is mutable
     id <- identifier <|> parens (operator <|> choice (map (\op -> reservedOp op >> return op) defOps))
     typeAnnotation <- option Nothing (Just <$> (colon *> type')) -- optional type annotation, only for variable declarations
     reservedOp "="
     expr <- expression
     semi
-    return $ DVar isMut typeAnnotation (Qualified Global id) expr
+    return $ DV isMut typeAnnotation (Qualified Global id) expr
     -- this gets resolved to the correct namespace ^ during the resolver pass
     -- we don't want to be able to define a variable of some other namespace
+
 
 -- Parse data declaration (data X = A | B | ...);
 dataDecl :: Parser UDecl
@@ -444,7 +453,9 @@ baseType = (TInt <$ reserved "int") <|> (TFloat <$ reserved "float")
         <|> try (TUnit <$ reserved "()") <|> (TVoid <$ reserved "void")
         <|> (TVar <$> typeVar) <|> parens type'
 
--- Names
+-----------
+-- Names --
+-----------
 -- Parse a qualified name, something like abc::def::xyz
 -- parses into Qualified (Relative (Relative Global "abc") "def") "xyz"
 qualified :: Parser String -> Parser QualifiedName

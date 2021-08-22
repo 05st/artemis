@@ -3,6 +3,8 @@
 module Interpreter (interpret) where
 
 import qualified Data.Map as Map
+import Data.Foldable
+import Data.Bifunctor
 
 import Control.Monad.Reader
 import Control.Monad.State
@@ -29,12 +31,13 @@ evalProgram = foldr ((>>) . evalDecl) (return ())
 evalDecl :: TDecl -> Interpret ()
 evalDecl = \case
     DStmt s -> evalStmt s
-    DVar _ _ id v -> do
-        (e, m) <- get
-        v' <- evalExpr v
-        case v' of
-            VFunc (UserDef ns Nothing p b c) -> put (Map.insert id (VFunc (UserDef ns (Just id) p b c)) e, m)
-            _ -> put (Map.insert id v' e, m)
+    DVar decls -> do
+        (names, values) <- unzip <$> traverse evalVarDecl decls
+        let toInject = zip names values
+        let values' = map (fillVFunc toInject) values
+        traverse_ (\(name, value) -> do
+            (env, m) <- get
+            put (Map.insert name value env, m)) (zip names values')
     DData tc tps cs -> mapM_ valueConstructor cs
     DNamespace name decls imps -> do
         ns <- ask
@@ -42,6 +45,13 @@ evalDecl = \case
         let newns = Relative ns name
         put (e, Map.insert newns imps imap)
         local (const newns) (foldr ((>>) . evalDecl) (return ()) decls)
+
+fillVFunc :: [(QualifiedName, Value)] -> Value -> Value
+fillVFunc injects (VFunc (UserDef namespace _ param expr closure)) = VFunc (UserDef namespace injects param expr closure)
+fillVFunc _ other = other
+
+evalVarDecl :: TDVar -> Interpret (QualifiedName, Value)
+evalVarDecl (DV _ _ name expr) = (,) name <$> evalExpr expr
 
 valueConstructor :: (QualifiedName, [Type]) -> Interpret ()
 valueConstructor (vc, vts) = do
@@ -71,7 +81,7 @@ evalExpr = \case
     EFunc _ p e -> do
         ns <- ask -- SHOULD BE RESOLVED ALREADY
         (env, _) <- get
-        return . VFunc $ UserDef ns Nothing (Qualified ns p) e env
+        return . VFunc $ UserDef ns [] (Qualified ns p) e env
     EIf _ c a b -> do
         c' <- evalExpr c
         let VBool cv = c'
@@ -91,11 +101,11 @@ evalExpr = \case
         a' <- evalExpr a
         let VFunc vf = f'
         case vf of
-            UserDef ns n p e c -> do
+            UserDef ns toInject p e c -> do
                 (orig, m) <- get
-                case n of
-                    Just id -> put (Map.insert p a' (Map.insert id f' c), m)
-                    Nothing -> put (Map.insert p a' c, m)
+                let toInject' = map (second (fillVFunc toInject)) toInject
+                let c' = c `Map.union` Map.fromList toInject'
+                put (Map.insert p a' c', m)
                 val <- local (const ns) (evalExpr e)
                 (_, m') <- get
                 put (orig, m')

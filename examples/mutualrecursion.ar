@@ -1,0 +1,9 @@
+let even = fnmatch
+    0 -> true,
+    n -> odd(subInt(n, 1));
+and odd = fnmatch
+    0 -> false,
+    n -> even(subInt(n, 1));
+
+print(showBool(even(20)));
+
